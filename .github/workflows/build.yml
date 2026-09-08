@@ -26,10 +26,25 @@ jobs:
         with:
           ndk-version: 'r25c'
 
+     # - name: Install System Dependencies
+     #   run: |
+     #     sudo apt-get update
+     #     sudo apt-get install -y generic-binfmt bridge-utils generate-ninja ninja-build python3-pip
+
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y generic-binfmt bridge-utils generate-ninja ninja-build python3-pip
+          # Eliminamos generic-binfmt e instalamos los paquetes de construcción estándar probados en Ubuntu modernos
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            ninja-build \
+            python3-pip \
+            python3-venv \
+            python3-setuptools \
+            git \
+            unzip
+          
 
       - name: Compile TV App (ARM 32-bit / armeabi-v7a)
         run: |
