@@ -1,0 +1,50 @@
+name: Build Matter TVApp
+
+on:
+  workflow_dispatch: # Permite iniciar la compilación manualmente con un botón
+
+jobs:
+  build-tv-libraries:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code with Submodules
+        uses: actions/checkout@v4
+        with:
+          repository: 'project-chip/connectedhomeip' # Va directo al repositorio original
+          ref: 'v1.3-branch' # Descarga la rama estable 1.3
+          submodules: 'recursive' # Trae los componentes criptográficos y de red obligatorios
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: 'r25c'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y generic-binfmt bridge-utils generate-ninja ninja-build python3-pip
+
+      - name: Compile TV App (ARM 32-bit / armeabi-v7a)
+        run: |
+          source scripts/activate.sh
+          ./scripts/build/build_examples.py --target android-arm-tv-app build
+
+      - name: Compile TV App (ARM 64-bit / arm64-v8a)
+        run: |
+          source scripts/activate.sh
+          ./scripts/build/build_examples.py --target android-arm64-tv-app build
+
+      - name: Upload Compiled libTvApp.so Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-tv-app-so-libraries
+          path: |
+            out/android-arm-tv-app/**/*.so
+            out/android-arm64-tv-app/**/*.so
