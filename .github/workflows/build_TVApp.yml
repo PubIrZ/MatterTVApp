@@ -17,13 +17,21 @@ jobs:
           submodules: 'recursive' # Obligatorio para descargar el núcleo de C++ de Matter
 
       # =========================================================================
-      # RETROCOMPATIBILIDAD JDK: FORZAMOS VERSION 11 EXIGIDA POR LA RAMA v1.3
+      # MATRIZ DE CONFIGURACIÓN DE JAVA DU_AL: LEVANTAMOS AMBAS VERSIONES EN MEMORIA
       # =========================================================================
-      - name: Set up Java JDK 11
+      - name: Set up Java JDK 17 (Para las herramientas del SDK de Google)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '11' # Sincronizado con los requisitos históricos de project-chip v1.3
+          java-version: '17'
+
+      - name: Set up Java JDK 11 (Para las herramientas internas de Matter v1.3)
+              # Java JDK 11: Sincronizado con los requisitos históricos de project-chip v1.3
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '11' # Al ser el último paso de Java, el sistema operativo queda fijado en Java 11 por defecto
+
 
       # =========================================================================
       # RETROCOMPATIBILIDAD NDK: INYECTAMOS LA VERSION EXACTA DE COMPILADOR CRUZADO
@@ -84,27 +92,25 @@ jobs:
      #     echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente."
 
       # =========================================================================
-      # INSTALACIÓN AISLADA DE LA PLATAFORMA ANDROID 26 (Bypass ClassVersionError)
+      # INSTALACIÓN AISLADA DE LA PLATAFORMA ANDROID 26 - JDK17 for sdkmanager
       # temporarily point the terminal path to Java 17 just for the sdkmanager execution step
       # =========================================================================
-      - name: Install Missing Android 26 Platform SDK - JDK17 for sdkmanager
+      - name: Install Missing Android 26 Platform SDK
         run: |
           echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
-          # [PARCHE MAESTRO JAVA RUNTIME SWAP]
-          # Localizamos la ruta por defecto donde GitHub Actions aloja de forma pre-instalada Java 17
-          JAVA_17_PATH="/opt/hostedtoolcache/Java_Zulu_jdk/17.0.12-7/x64/bin"
           
-          if [ -d "$JAVA_17_PATH" ]; then
-              echo "INFRA: Desviando ejecución de sdkmanager hacia Java 17..."
-              # Inyectamos temporalmente Java 17 al inicio del PATH para este subproceso aislado
-              export PATH="$JAVA_17_PATH:$PATH"
+          # [PARCHE MAESTRO INYECTOR DE ENTORNO EN CALIENTE]
+          # Usamos la variable nativa de entorno generada de forma infalible por el setup-java del paso 1.
+          # Forzamos temporalmente el PATH binario hacia Java 17 únicamente para burlar la aduana de Google.
+          if [ -n "$JAVA_HOME_17_X64" ]; then
+              echo "INFRA: Desviando SdkManagerCli de forma inequívoca hacia: $JAVA_HOME_17_X64"
+              export PATH="$JAVA_HOME_17_X64/bin:$PATH"
           fi
           
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
-          echo "SUCCESS: Archivo android.jar (API 26) inyectado de forma segura usando Java 17."
+          echo "SUCCESS: Archivo android.jar (API 26) inyectado de forma segura y transparente."
 
-      # 
 
       # =========================================================================
       # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO VARIABLE LEGIBLE Y DESPLIEGUE
