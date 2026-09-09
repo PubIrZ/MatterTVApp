@@ -1,5 +1,5 @@
 name: Build Matter TVApp (TVApp & .so libs)
-# JDK 11 & NDK 23.2.8568313
+# JDK 11 & NDK 23.2.8568313 (r23c)
 
 on:
   workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
@@ -28,11 +28,13 @@ jobs:
       # =========================================================================
       # RETROCOMPATIBILIDAD NDK: INYECTAMOS LA VERSION EXACTA DE COMPILADOR CRUZADO
       # =========================================================================
-      - name: Set up Android NDK r23b
+      - name: Set up Android NDK r23c
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: '23.2.8568313' # NDK r23b compatible de forma nativa con los fuentes de C++
+          ndk-version: 'r23c' # NDK '23.2.8568313' = r23c compatible de forma nativa con los fuentes de C++
+          # 23.2.8568313 is registered under the deployment release name r23c 
+          # Passing the canonical semantic identifier r23c
 
       # =========================================================================
       # ENTORNO SEGURO: PYTHON 3.11 EVITA EL CRASH DE LOS TIPOS DE DATOS (TYPEVAR)
