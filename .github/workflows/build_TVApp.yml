@@ -99,12 +99,13 @@ jobs:
         run: |
           echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
           
-          # [PARCHE MAESTRO INYECTOR DE ENTORNO EN CALIENTE]
-          # Usamos la variable nativa de entorno generada de forma infalible por el setup-java del paso 1.
-          # Forzamos temporalmente el PATH binario hacia Java 17 únicamente para burlar la aduana de Google.
+          # [PARCHE MAESTRO DEFINITIVO: SECUESTRO DE VARIABLE JAVA_HOME]
+          # Forzamos la variable nativa global $JAVA_HOME a mutar su puntero temporalmente hacia Java 17.
+          # Esto rompe el bloqueo de clases y obliga al SdkManagerCli a validar los contratos bajo la versión 61.0.
           if [ -n "$JAVA_HOME_17_X64" ]; then
-              echo "INFRA: Desviando SdkManagerCli de forma inequívoca hacia: $JAVA_HOME_17_X64"
-              export PATH="$JAVA_HOME_17_X64/bin:$PATH"
+              echo "INFRA: Forzando variable JAVA_HOME hacia el entorno compatible: $JAVA_HOME_17_X64"
+              export JAVA_HOME="$JAVA_HOME_17_X64"
+              export PATH="$JAVA_HOME/bin:$PATH"
           fi
           
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
@@ -223,6 +224,13 @@ jobs:
           path: |
             out/android-arm-tv-server/**/*.so
             out/android-arm64-tv-server/**/*.so
+
+      - name: Upload Compiled Matter TVApp APKs to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-tv-app-final-apks
+          path: |
+            examples/tv-app/android/app/build/outputs/apk/debug/*.apk      
 
       - name: Upload Compiled Matter TVApp APKs to Artifacts
         uses: actions/upload-artifact@v4
