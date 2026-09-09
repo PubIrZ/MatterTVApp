@@ -11,7 +11,7 @@ jobs:
       - name: Inject Pre-built ZAP Compiler Tool (1
         run: |
           # 1. Usamos una URL de Release Oficial Global de ZAP que SÍ es 100% pública y libre de logins
-          URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29"
+          URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
           
           echo "INFRA: Iniciando descarga verificada desde almacén público..."
           curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap-linux-x64.zip
