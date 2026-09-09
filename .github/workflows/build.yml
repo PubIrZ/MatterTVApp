@@ -123,6 +123,15 @@ jobs:
           # 2. Creamos la carpeta global de herramientas en la máquina virtual Linux
           sudo mkdir -p /usr/local/share/zap
           sudo unzip -q zap.zip -d /usr/local/share/zap
+
+          # [NUEVO PARCHE CRÍTICO DE ENTORNO ZAP LAYOUT]
+          # El ZIP desempaqueta una subcarpeta 'zap-linux-x64'. Movemos todo su contenido 
+          # hacia la raíz de '/usr/local/share/zap/' para que los scripts encuentren 'src-script/zap-start.js'
+          if [ -d "/usr/local/share/zap/zap-linux-x64" ]; then
+              echo "INFRA: Re-alineando árbol de directorios de Node.js..."
+              sudo cp -r /usr/local/share/zap/zap-linux-x64/* /usr/local/share/zap/
+              sudo rm -rf /usr/local/share/zap/zap-linux-x64
+          fi
           
           # 3. Creamos los enlaces simbólicos para la terminal global de Linux
           sudo ln -s /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
