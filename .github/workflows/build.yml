@@ -27,6 +27,14 @@ jobs:
         with:
           ndk-version: 'r25c' # Versión de toolchain recomendada para el empaquetado de tv-app v1.3
 
+      # =========================================================================
+      # SOLUCIÓN CRÍTICA: FORZAMOS PYTHON 3.11 PARA EVITAR EL CRASH DE TYPEVAR
+      # =========================================================================
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Fija el entorno nativo en la versión exacta que Matter 1.3 necesita
+
       - name: Install System Dependencies
         run: |
           sudo apt-get update
