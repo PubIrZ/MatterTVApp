@@ -1,0 +1,37 @@
+name: Check Matter Valid Build Targets
+
+on:
+  workflow_dispatch: # Permite iniciar la verificación manualmente con un botón
+
+jobs:
+  check-targets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          repository: 'project-chip/connectedhomeip'
+          ref: 'v1.3-branch' # Tu rama de Matter 1.3
+          submodules: 'false' # No necesitamos submódulos pesados solo para leer texto, irá rapidísimo
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Click Dependency
+        run: |
+          # El script build_examples.py necesita la librería 'click' para poder ejecutarse en consola
+          pip install click coloredlogs
+
+      # =========================================================================
+      # EJECUCIÓN DE DIAGNÓSTICO: INTERROGAMOS LOS NOMBRE VÁLIDOS DE LA V1.3
+      # =========================================================================
+      - name: List All Valid Matter Targets
+        run: |
+          echo "=== LISTA DE TARGETS EN FORMATO RESUMIDO ==="
+          python3 scripts/build/build_examples.py targets --format summary
+          
+          echo "=== LISTA DE TARGETS EN FORMATO EXPANDIDO ==="
+          python3 scripts/build/build_examples.py targets --format expanded
