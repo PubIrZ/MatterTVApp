@@ -80,11 +80,19 @@ jobs:
           echo "INFRA: Variable ZAP_DEVELOPMENT_PATH activada con éxito."
 
       - name: Compile TV App (ARM 32-bit / armeabi-v7a)
+        env:
+          # Forzamos parámetros de omisión para que la herramienta Pigweed no reescriba nuestra inyección
+          CIPD_AUTH_USER: "anonymous"
+          PW_NO_CIPD_CACHE: "1"
         run: |
           source scripts/activate.sh
           ./scripts/build/build_examples.py --target android-arm-tv-app build
 
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
+        env:
+          # Forzamos parámetros de omisión para que la herramienta Pigweed no reescriba nuestra inyección
+          CIPD_AUTH_USER: "anonymous"
+          PW_NO_CIPD_CACHE: "1"
         run: |
           source scripts/activate.sh
           ./scripts/build/build_examples.py --target android-arm64-tv-app build
