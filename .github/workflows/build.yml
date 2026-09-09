@@ -89,9 +89,9 @@ jobs:
         run: |
           # Al ejecutar activate.sh leerá el JSON vacío, saltará CIPD e irá directo a compilar
           source scripts/activate.sh
-          ./scripts/build/build_examples.py --target android-arm build build
+          ./scripts/build/build_examples.py --target android-arm-tv-server build build
 
-      - name: Compile TV App (ARM 64-bit / arm64-v8a)
+      - name: Compile TV App (ARM 64-bit / arm64-v8a-tv-server)
         run: |
           source scripts/activate.sh
           ./scripts/build/build_examples.py --target android-arm64 build build
