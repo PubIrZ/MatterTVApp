@@ -1,7 +1,7 @@
 name: Build Matter TVApp
 
 on:
-  workflow_dispatch: # Permite iniciar la compilación manualmente con un botón
+  workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
 
 jobs:
   build-tv-libraries:
@@ -13,7 +13,7 @@ jobs:
         with:
           repository: 'project-chip/connectedhomeip'
           ref: 'v1.3-branch' # Tu rama estable recomendada de Matter
-          submodules: 'recursive'
+          submodules: 'recursive' # Obligatorio para descargar el núcleo de C++ de Matter
 
       - name: Set up Java JDK
         uses: actions/setup-java@v4
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: 'r25c'
+          ndk-version: 'r25c' # Versión de toolchain recomendada para el empaquetado de tv-app v1.3
 
       - name: Install System Dependencies
         run: |
@@ -38,40 +38,53 @@ jobs:
             python3-setuptools \
             git \
             unzip \
-            curl
+            curl \
+            file
 
       # =========================================================================
-      # BYPASS DE CIPD COMPLETO: DESCARGA E INYECCIÓN GLOBAL DEL COMPILADOR ZAP
+      # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TEST DE INTEGRIDAD Y DESPLIEGUE
       # =========================================================================
       - name: Inject Pre-built ZAP Compiler Tool
         run: |
-          # 1. Descargamos el motor estable de ZAP desde el espejo público de lanzamientos de GitHub
-          curl -L https://github.com -o zap.zip
+          # 1. Usamos una URL de Release Oficial Global de ZAP que SÍ es 100% pública y libre de logins
+          URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29"
           
-          # 2. Creamos una carpeta de herramientas global compartida en el sistema de la máquina virtual Linux
+          echo "INFRA: Iniciando descarga verificada desde almacén público..."
+          curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap-linux-x64.zip
+          
+          # 2. TEST DE INTEGRIDAD EN CALIENTE (Evita pasar páginas HTML como ZIPs falsos)
+          echo "=== AUDITORÍA DE INTEGRIDAD ==="
+          if unzip -t zap-linux-x64.zip > /dev/null 2>&1; then
+              echo "SUCCESS: El archivo zap.zip se descargó de forma íntegra y es un archivo ZIP binario válido."
+              echo "Tamaño real en disco:" && ls -lh zap-linux-x64.zip
+          else
+              echo "CRITICAL ERROR: El archivo descargado no es un ZIP válido (es un HTML de error o bloqueo de red)." >&2
+              echo "Primeras líneas del archivo capturado por la red para diagnóstico:"
+              head -n 10 zap-linux-x64.zip
+              exit 1
+          fi
+          echo "================================="
+          
+          # 3. Despliegue global en el sistema de la máquina virtual Linux de la nube
           sudo mkdir -p /usr/local/share/zap
-          sudo unzip zap.zip -d /usr/local/share/zap
+          sudo unzip -q zap-linux-x64.zip -d /usr/local/share/zap
           
-          # 3. Creamos un enlace simbólico para que la terminal reconozca el comando de forma nativa en cualquier ruta
+          # 4. Enlace del binario ejecutable para que el PATH global de Linux lo reconozca
           sudo ln -s /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
           sudo chmod +x /usr/local/bin/zap-cli
           
-          # 4. Inyectamos la variable nativa de Matter en el entorno global del pipeline.
-          # Cuando 'activate.sh' lea esto, apagará por completo la llamada de red hacia el servidor CIPD bloqueado.
+          # 5. Inyección de la variable oculta del SDK para apagar CIPD definitivamente
           echo "ZAP_DEVELOPMENT_PATH=/usr/local/share/zap" >> $GITHUB_ENV
-          echo "INFRA: Variable ZAP_DEVELOPMENT_PATH inyectada de forma asertiva."
+          echo "INFRA: Variable ZAP_DEVELOPMENT_PATH activada con éxito."
 
       - name: Compile TV App (ARM 32-bit / armeabi-v7a)
         run: |
-          # Inicializa el entorno local de Matter (leerá ZAP_DEVELOPMENT_PATH y omitirá CIPD)
           source scripts/activate.sh
-          # Ejecuta la compilación de la app y la librería libTvApp.so de 32 bits para Android TV común
           ./scripts/build/build_examples.py --target android-arm-tv-app build
 
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
         run: |
           source scripts/activate.sh
-          # Ejecuta la compilación de 64 bits de respaldo para Android TV de gama alta
           ./scripts/build/build_examples.py --target android-arm64-tv-app build
 
       - name: Upload Compiled libTvApp.so Artifacts
