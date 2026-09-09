@@ -30,6 +30,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
+          # Añadimos libglib2.0-dev y libdbus-1-dev, mandatorias para que el host de Pigweed inicialice el entorno
           sudo apt-get install -y \
             build-essential \
             pkg-config \
@@ -37,12 +38,13 @@ jobs:
             python3-pip \
             python3-venv \
             python3-setuptools \
+            libglib2.0-dev \
+            libdbus-1-dev \
             git \
             unzip \
             curl \
             file
-
-
+            
       - name: Inject Pre-built ZAP Compiler Tool
         run: |
           # 1. Usamos una URL de Release Oficial Global de ZAP que SÍ es 100% pública y libre de logins
