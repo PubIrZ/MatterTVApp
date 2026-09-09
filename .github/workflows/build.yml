@@ -42,9 +42,6 @@ jobs:
             curl \
             file
 
-      # =========================================================================
-      # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TEST DE INTEGRIDAD Y DESPLIEGUE
-      # =========================================================================
 
       - name: Inject Pre-built ZAP Compiler Tool
         run: |
@@ -54,40 +51,44 @@ jobs:
           echo "INFRA: Iniciando descarga verificada desde almacén público..."
           curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap-linux-x64.zip
           
-          # 2. Creamos la ruta física exacta donde el gestor CIPD de Matter v1.3 guarda las herramientas
-          # Buscamos la carpeta oculta de entorno interno que genera Pigweed
-          TARGET_DIR="$GITHUB_WORKSPACE/.environment/cipd/packages/zap"
-          mkdir -p "$TARGET_DIR"
+      # =========================================================================
+      # PARCHE MAESTRO: DESTRUIMOS EL MENÚ INTERACTIVO MODIFICANDO EL CONFIG DE MATTER
+      # =========================================================================
+      - name: Inject Pre-built ZAP and Bypass Interactive Prompts
+        run: |
+          # 1. Descargamos el motor estable de ZAP de 64 bits (espejo público de GitHub)
+          URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+          echo "INFRA: Descargando compilador ZAP público..."
+          curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap.zip
           
-          # 3. Descomprimimos ZAP directamente en la celda donde CIPD espera encontrarlo
-          unzip -q zap-linux-x64.zip -d "$TARGET_DIR"
+          # 2. Creamos la carpeta global de herramientas en la máquina virtual
+          sudo mkdir -p /usr/local/share/zap
+          sudo unzip -q zap.zip -d /usr/local/share/zap
           
-          # 4. TRUCO DE CONTROL (SPOOFING): Creamos el archivo de estado de CIPD falso.
-          # Matter 1.3 lee este archivo .cipd_version para comprobar si el paquete es legítimo.
-          # Al inyectarle un hash simulado, el bootstrap asume que la descarga terminó y omite la llamada de red.
-          echo '{"package_name": "fuchsia/third_party/zap", "instance_id": "faked_local_instance_to_bypass_login"}' > "$TARGET_DIR/.cipd_version"
-          
-          # 5. Hacemos el ejecutable accesible globalmente e inyectamos la ruta de respaldo
-          sudo ln -s "$TARGET_DIR/zap-cli" /usr/local/bin/zap-cli
+          # 3. Creamos los enlaces simbólicos para la terminal de Linux
+          sudo ln -s /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
           sudo chmod +x /usr/local/bin/zap-cli
-          echo "ZAP_DEVELOPMENT_PATH=$TARGET_DIR" >> $GITHUB_ENV
-          echo "INFRA: Parche físico de CIPD aplicado con éxito para la rama v1.3
-
+          
+          # 4. TRUCO DE INFRAESTRUCTURA MÁXIMA: Modificamos el JSON interno de Matter.
+          # Editamos 'scripts/setup/zap.json' para eliminar las dependencias de red de fuchsia/third_party/zap.
+          # Al dejar el JSON limpio y sin paquetes remotos, 'activate.sh' no tendrá nada que descargar de Google Cloud
+          # y jamás abrirá el menú interactivo que congela el servidor.
+          if [ -f "scripts/setup/zap.json" ]; then
+              echo '{"packages": []}' > scripts/setup/zap.json
+              echo "INFRA: Archivo scripts/setup/zap.json neutralizado con éxito."
+          fi
+          
+          # 5. Forzamos la variable global nativa para que use nuestra inyección local
+          echo "ZAP_DEVELOPMENT_PATH=/usr/local/share/zap" >> $GITHUB_ENV
+          echo "INFRA: Entorno ZAP blindado contra bloqueos interactivos."
 
       - name: Compile TV App (ARM 32-bit / armeabi-v7a)
-        env:
-          # Forzamos parámetros de omisión para que la herramienta Pigweed no reescriba nuestra inyección
-          CIPD_AUTH_USER: "anonymous"
-          PW_NO_CIPD_CACHE: "1"
         run: |
+          # Al ejecutar activate.sh leerá el JSON vacío, saltará CIPD e irá directo a compilar
           source scripts/activate.sh
           ./scripts/build/build_examples.py --target android-arm-tv-app build
 
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
-        env:
-          # Forzamos parámetros de omisión para que la herramienta Pigweed no reescriba nuestra inyección
-          CIPD_AUTH_USER: "anonymous"
-          PW_NO_CIPD_CACHE: "1"
         run: |
           source scripts/activate.sh
           ./scripts/build/build_examples.py --target android-arm64-tv-app build
