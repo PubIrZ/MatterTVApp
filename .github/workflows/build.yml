@@ -144,21 +144,21 @@ jobs:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           # Inyectamos de forma obligatoria el argumento verbose para capturar el fallo de la tarea 37
-          NINJA_ARGS: "-v"          
+          #NINJA_ARGS: "-v"          
         run: |
           source scripts/activate.sh
           # Ejecutamos la llamada limpia de destino combinada para la especificación v1.3
-          ./scripts/build/build_examples.py --target android-arm-tv-server build
+          ./scripts/build/build_examples.py --target android-arm-tv-server build --verbose
 
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           # Inyectamos de forma obligatoria el argumento verbose para capturar el fallo de la tarea 37
-          NINJA_ARGS: "-v"          
+          #NINJA_ARGS: "-v"          
         run: |
           source scripts/activate.sh
-          ./scripts/build/build_examples.py --target android-arm64-tv-server build
+          ./scripts/build/build_examples.py --target android-arm64-tv-server build --verbose
 
       - name: Upload Compiled libTvApp.so Artifacts
         uses: actions/upload-artifact@v4
