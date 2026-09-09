@@ -21,10 +21,16 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Set up Android NDK
+      # =========================================================================
+      # RETROCOMPATIBILIDAD NDK: FORCE r25c TO PREVENT LIBC++ PATH CROAKING
+      # =========================================================================
+      - name: Set up Android NDK r25c
+        id: setup-ndk
         uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: 'r25c' # Versión de NDK requerida para compilar tv-app v1.3 sin roturas
+        with:                 # Versión de NDK requerida para compilar tv-app v1.3 sin roturas  
+          ndk-version: 'r25c' # Contiene la estructura de directorios sources/cxx-stl nativa que Matter 1.3 exige
+
+
 
       # =========================================================================
       # ENTORNO SEGURO: PYTHON 3.11 EVITA EL CRASH DE LOS TIPOS DE DATOS (TYPEVAR)
