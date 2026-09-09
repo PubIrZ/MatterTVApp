@@ -22,15 +22,13 @@ jobs:
           java-version: '17'
 
       # =========================================================================
-      # RETROCOMPATIBILIDAD NDK: FORCE r25c TO PREVENT LIBC++ PATH CROAKING
+      # RETROCOMPATIBILIDAD NDK: INYECTAMOS EL SDK r25c ESTABLE DE RESPALDO
       # =========================================================================
       - name: Set up Android NDK r25c
         id: setup-ndk
         uses: nttld/setup-ndk@v1
-        with:                 # Versión de NDK requerida para compilar tv-app v1.3 sin roturas  
-          ndk-version: 'r25c' # Contiene la estructura de directorios sources/cxx-stl nativa que Matter 1.3 exige
-
-
+        with:
+          ndk-version: 'r25c' # Estructura con directorios STL cxx nativos compatibles con Matter 1.3
 
       # =========================================================================
       # ENTORNO SEGURO: PYTHON 3.11 EVITA EL CRASH DE LOS TIPOS DE DATOS (TYPEVAR)
@@ -55,26 +53,25 @@ jobs:
             file
 
       # =========================================================================
-      # PARCHE CRÍTICO DE CONECTIVIDAD: INSTALACIÓN DE LA PLATAFORMA ANDROID 26
+      # INSTALACIÓN DE LA PLATAFORMA ANDROID 26 (Requisito de compilador cruzado)
       # =========================================================================
       - name: Install Missing Android 26 Platform SDK
         run: |
           echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
-          # Forzamos la aceptación de licencias e instalamos la API 26 que requiere el enlazador Ninja de Matter
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
-          echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente en el entorno de la nube."
+          echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente."
 
       # =========================================================================
       # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, CIRUGÍA DE JSON Y DESPLIEGUE
       # =========================================================================
       - name: Inject Pre-built ZAP and Bypass Interactive Prompts
         run: |
-          # 1. Descargamos el motor estable de ZAP de 64 bits para el procesador Intel de la nube
+          # 1. Conservamos y fijamos la URL pública exacta solicitada para entroncar la arquitectura x64
           URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
-          echo "INFRA: Descargando compilador ZAP público..."
+          echo "INFRA: Descargando compilador ZAP público desde $URL_ZAP..."
           curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap.zip
-      
+          
           # 2. Creamos la carpeta global de herramientas en la máquina virtual Linux
           sudo mkdir -p /usr/local/share/zap
           sudo unzip -q zap.zip -d /usr/local/share/zap
@@ -94,15 +91,23 @@ jobs:
           echo "INFRA: Entorno ZAP blindado de forma asertiva."
 
       - name: Compile TV App (ARM 32-bit / armeabi-v7a)
+        env:
+          # [EDUCATIVO] CORRECCIÓN DE ENTORNO NDK COMPILADOR: 
+          # Forzamos la inyección en las variables globales de compilación nativa cruzada de Android.
+          # Esto anula la autodetención de NDK r27 del sistema operativo host e inyecta r25c en la tarea.
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           source scripts/activate.sh
-          # VALIDACIÓN V1.3: Se utiliza la combinación dinámica exacta certificada: android-arm-tv-server
+          # Ejecutamos la llamada limpia de destino combinada para la especificación v1.3
           ./scripts/build/build_examples.py --target android-arm-tv-server build
 
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           source scripts/activate.sh
-          # VALIDACIÓN V1.3: Se utiliza la combinación dinámica exacta certificada: android-arm64-tv-server
           ./scripts/build/build_examples.py --target android-arm64-tv-server build
 
       - name: Upload Compiled libTvApp.so Artifacts
@@ -112,9 +117,3 @@ jobs:
           path: |
             out/android-arm-tv-server/**/*.so
             out/android-arm64-tv-server/**/*.so
-
-            
-         
-
-          
-         
