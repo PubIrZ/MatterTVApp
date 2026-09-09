@@ -85,8 +85,7 @@ jobs:
           echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
           
-          # In NDK versions r23 through r25, Google changed how the NDK layout handles the Shared C++ 
-          # runtime library (libc++_shared.so).
+          # In NDK versions r23 through r25, Google changed how the NDK layout handles the Shared C++ runtime library (libc++_shared.so).
           # 1. Recreamos la ruta física esperada por el viejo script de Matter 1.3's build system     
           TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
           TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
@@ -103,7 +102,7 @@ jobs:
           echo "SUCCESS: Enlaces simbólicos de libc++_shared.so creados con total éxito."
 
       # =========================================================================
-      # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO HTTPX Y DESPLIEGUE
+      # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO VARIABLE LEGIBLE Y DESPLIEGUE
       # =========================================================================
       - name: Inject Pre-built ZAP and Bypass Interactive Prompts
         run: |
@@ -111,18 +110,16 @@ jobs:
           # 1. Conservamos y fijamos la URL pública exacta solicitada para entroncar la arquitectura x64
           URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
 
-
-          
           echo "INFRA: Descargando compilador ZAP público desde $URL_ZAP...: ${URL_ZAP}"
           curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap.zip
 
           ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
           URL_ZAP="https://github.com${ZAP_ASSET}"
           echo "INFRA: Descargando de forma inequívoca desde la ruta: ${URL_ZAP}"
-          
+
           # 2. Creamos la carpeta global de herramientas en la máquina virtual Linux
           sudo mkdir -p /usr/local/share/zap
-          sudo unzip -q zap.zip -d /usr/local/share/zap
+          sudo unzip -o -q zap.zip -d /usr/local/share/zap
 
           # [NUEVO PARCHE CRÍTICO DE ENTORNO ZAP LAYOUT]
           # El ZIP desempaqueta una subcarpeta 'zap-linux-x64'. Movemos todo su contenido 
@@ -133,9 +130,12 @@ jobs:
               sudo rm -rf /usr/local/share/zap/zap-linux-x64
           fi
           
-          # 3. Creamos los enlaces simbólicos para la terminal global de Linux
-          sudo ln -s /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
+          # 3. Creamos los enlaces de ejecución simbólicos globales para Linux
+          sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
+          sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap
+          sudo chmod +x /usr/local/share/zap/zap-cli
           sudo chmod +x /usr/local/bin/zap-cli
+          sudo chmod +x /usr/local/bin/zap
           
           # 4. NEUTRALIZACIÓN DE CIPD: Vaciamos el archivo scripts/setup/zap.json.
           if [ -f "scripts/setup/zap.json" ]; then
@@ -143,9 +143,10 @@ jobs:
               echo "INFRA: Archivo scripts/setup/zap.json neutralizado con éxito."
           fi
           
-          # 5. Inyectamos la variable nativa para avisarle al SDK de Matter que use nuestra instalación
-          echo "ZAP_DEVELOPMENT_PATH=/usr/local/share/zap" >> $GITHUB_ENV
-          echo "INFRA: Entorno ZAP blindado de forma asertiva."
+          # 5. CORRECCIÓN CRÍTICA DE VARIABLE DE PRODUCCIÓN:
+          # Al eliminar ZAP_DEVELOPMENT_PATH e inyectar ZAP_INSTALL_PATH, evitamos el bucle de error de Node.js
+          echo "ZAP_INSTALL_PATH=/usr/local/bin" >> $GITHUB_ENV
+          echo "INFRA: Entorno ZAP fijado con éxito en modo ejecución de producción."
 
       - name: Compile TV App (ARM 32-bit / armeabi-v7a)
         env:
@@ -156,18 +157,11 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           source scripts/activate.sh
-          ## Ejecutamos la llamada limpia de destino combinada para la especificación v1.3
-          #./scripts/build/build_examples.py  --log-level debug --target android-arm-tv-server build
-
           # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
           ./scripts/build/build_examples.py --target android-arm-tv-server gen
           
-          # 2. TRUCO DE COMPILACIÓN SE_PARADA: Saltamos build_examples.py e invocamos a Ninja directamente.
-          # Le ordenamos compilar únicamente la librería nativa de C++ 'libTvApp.so', 
-          # esquivando de forma limpia las herramientas rotas de Kotlinc.
-          # CORRECCIÓN DL TARGET: Invocamos a Ninja apuntando directamente a 'jni'
+          # 2. TRUCO DE COMPILACIÓN SE_PARADA: Saltamos la envoltura de python y compilamos directo por jni
           echo "INFRA: Iniciando compilación directa de libTvApp C++ mediante target jni..."
-          #ninja -C out/android-arm-tv-server libTvApp
           ninja -C out/android-arm-tv-server jni
 
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
@@ -176,19 +170,14 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           source scripts/activate.sh
-          ## Ejecutamos la llamada limpia de destino combinada para la especificación v1.3
-          #./scripts/build/build_examples.py  --log-level debug --target android-arm64-tv-server build
-
           # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
           ./scripts/build/build_examples.py --target android-arm64-tv-server gen
           
-          # 2. TRUCO DE COMPILACIÓN SE_PARADA: Saltamos build_examples.py e invocamos a Ninja directamente.
-          # Le ordenamos compilar únicamente la librería nativa de C++ 'libTvApp.so', 
-          # esquivando de forma limpia las herramientas rotas de Kotlinc.
+          # 2. Compilación directa de 64 bits esquivando Kotlinc mediante target jni
           echo "INFRA: Iniciando compilación directa de libTvApp C++ de 64 bits mediante target jni..."
           ninja -C out/android-arm64-tv-server jni
           
-      - name: Upload Compiled libTvApp.so Artifacts
+      <![chip-usage: "out/android-arm-tv-server" ]/>- name: Upload Compiled libTvApp.so Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: matter-tv-app-so-libraries
