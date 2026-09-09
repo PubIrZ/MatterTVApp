@@ -154,23 +154,38 @@ jobs:
           # Esto anula la autodetención de NDK r27 del sistema operativo host e inyecta r25c en la tarea.
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          # Inyectamos de forma obligatoria el argumento verbose para capturar el fallo de la tarea 37
-          #NINJA_ARGS: "-v"          
         run: |
           source scripts/activate.sh
-          # Ejecutamos la llamada limpia de destino combinada para la especificación v1.3
-          ./scripts/build/build_examples.py  --log-level debug --target android-arm-tv-server build
+          ## Ejecutamos la llamada limpia de destino combinada para la especificación v1.3
+          #./scripts/build/build_examples.py  --log-level debug --target android-arm-tv-server build
 
+          # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
+          ./scripts/build/build_examples.py --target android-arm-tv-server gen
+          
+          # 2. TRUCO DE COMPILACIÓN SE_PARADA: Saltamos build_examples.py e invocamos a Ninja directamente.
+          # Le ordenamos compilar únicamente la librería nativa de C++ 'libTvApp.so', 
+          # esquivando de forma limpia las herramientas rotas de Kotlinc.
+          echo "INFRA: Iniciando compilación directa de libTvApp C++..."
+          ninja -C out/android-arm-tv-server libTvApp
+          
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-          # Inyectamos de forma obligatoria el argumento verbose para capturar el fallo de la tarea 37
-          #NINJA_ARGS: "-v"          
         run: |
           source scripts/activate.sh
-          ./scripts/build/build_examples.py  --log-level debug --target android-arm64-tv-server build
+          ## Ejecutamos la llamada limpia de destino combinada para la especificación v1.3
+          #./scripts/build/build_examples.py  --log-level debug --target android-arm64-tv-server build
 
+          # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
+          ./scripts/build/build_examples.py --target android-arm64-tv-server gen
+          
+          # 2. TRUCO DE COMPILACIÓN SE_PARADA: Saltamos build_examples.py e invocamos a Ninja directamente.
+          # Le ordenamos compilar únicamente la librería nativa de C++ 'libTvApp.so', 
+          # esquivando de forma limpia las herramientas rotas de Kotlinc.
+          echo "INFRA: Iniciando compilación directa de libTvApp C++ de 64 bits..."
+          ninja -C out/android-arm64-tv-server libTvApp
+          
       - name: Upload Compiled libTvApp.so Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -178,3 +193,4 @@ jobs:
           path: |
             out/android-arm-tv-server/**/*.so
             out/android-arm64-tv-server/**/*.so
+
