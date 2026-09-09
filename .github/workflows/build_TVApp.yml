@@ -76,12 +76,35 @@ jobs:
       # =========================================================================
       # INSTALACIÓN DE LA PLATAFORMA ANDROID 26 (Requisito de compilador cruzado)
       # =========================================================================
-      - name: Install Missing Android 26 Platform SDK
+     # - name: Install Missing Android 26 Platform SDK
+     #   run: |
+     #     echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
+     #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
+     #     $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
+     #     echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente."
+
+      # =========================================================================
+      # INSTALACIÓN AISLADA DE LA PLATAFORMA ANDROID 26 (Bypass ClassVersionError)
+      # temporarily point the terminal path to Java 17 just for the sdkmanager execution step
+      # =========================================================================
+      - name: Install Missing Android 26 Platform SDK - JDK17 for sdkmanager
         run: |
           echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
+          # [PARCHE MAESTRO JAVA RUNTIME SWAP]
+          # Localizamos la ruta por defecto donde GitHub Actions aloja de forma pre-instalada Java 17
+          JAVA_17_PATH="/opt/hostedtoolcache/Java_Zulu_jdk/17.0.12-7/x64/bin"
+          
+          if [ -d "$JAVA_17_PATH" ]; then
+              echo "INFRA: Desviando ejecución de sdkmanager hacia Java 17..."
+              # Inyectamos temporalmente Java 17 al inicio del PATH para este subproceso aislado
+              export PATH="$JAVA_17_PATH:$PATH"
+          fi
+          
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
-          echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente."
+          echo "SUCCESS: Archivo android.jar (API 26) inyectado de forma segura usando Java 17."
+
+      # 
 
       # =========================================================================
       # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO VARIABLE LEGIBLE Y DESPLIEGUE
@@ -127,17 +150,39 @@ jobs:
           echo "ZAP_INSTALL_PATH=/usr/local/bin" >> $GITHUB_ENV
           echo "INFRA: Entorno ZAP fijado con éxito en modo ejecución de producción."
 
+      ## Compila todo en un paso
+      #- name: Compile TV App (ARM 32-bit / armeabi-v7a)
+      #  env:
+      #    ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+      #    ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      #  run: |
+      #    source scripts/activate.sh
+      #    ./scripts/build/build_examples.py --target android-arm-tv-server
+      #    
+      #- name: Compile TV App (ARM 64-bit / arm64-v8a) 
+      #  env:
+      #    ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+      #    ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      #  run: |
+      #    source scripts/activate.sh
+      #    ./scripts/build/build_examples.py --target android-arm64-tv-server 
+      #
+
+          
+      # Compila todo en tres pasos
+      # =========================================================================
+      # PASO 1: COMPILACIÓN DE LIBRERÍAS NATIVAS (.SO) PURAS VÍA NINJA
+      # =========================================================================
       - name: Compile TV App (ARM 32-bit / armeabi-v7a)
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           source scripts/activate.sh
-          # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
+          # 1. Generamos el plano de construcción estructural de Ninja   (gen = plano de arquitectura de Ninja)
           ./scripts/build/build_examples.py --target android-arm-tv-server gen
-          
-          # 2. Invocamos a Ninja apuntando directamente al target compilador nativo 'jni'
-          echo "INFRA: Iniciando compilación directa de libTvApp C++ mediante target jni..."
+          # 2. Compilamos exclusivamente las librerías .so mediante el target nativo 'jni'
+          echo "INFRA: Construyendo binario libTvApp.so de 32 bits..."
           ninja -C out/android-arm-tv-server jni
 
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
@@ -147,9 +192,23 @@ jobs:
         run: |
           source scripts/activate.sh
           ./scripts/build/build_examples.py --target android-arm64-tv-server gen
-          
-          echo "INFRA: Iniciando compilación directa de libTvApp de 64 bits mediante target jni..."
+          echo "INFRA: Construyendo binario libTvApp.so de 64 bits..."
           ninja -C out/android-arm64-tv-server jni
+
+      # =========================================================================
+      # PASO 2: EMPAQUETADO DEL APK MEDIANTE LLAMADA DIRECTA A GRAD_LEW
+      # =========================================================================
+      - name: Build Final Android TV Application APK
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          echo "=== INICIANDO ENLACE DE CON_TEXTO GRADLE ==="
+          cd examples/tv-app/android
+          chmod +x gradlew
+          # Ejecutamos el empaquetador directo de Android sin pasar por los scripts intermedios de Python
+          ./gradlew assembleDebug
+          
           
       - name: Upload Compiled libTvApp.so Artifacts
         uses: actions/upload-artifact@v4
