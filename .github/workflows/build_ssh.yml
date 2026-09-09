@@ -1,0 +1,40 @@
+name: Debug Matter TV App Environment (Manual Access)
+
+on:
+  workflow_dispatch: # Permite iniciar la terminal manual con un botón en la web
+
+jobs:
+  interactive-debug:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code with Submodules
+        uses: actions/checkout@v4
+        with:
+          repository: 'project-chip/connectedhomeip'
+          ref: 'v1.3-branch' # La rama que quieres auditar
+          submodules: 'recursive'
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: 'r25c'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config ninja-build python3-pip python3-venv python3-setuptools git unzip curl file
+
+      # =========================================================================
+      # PUENTE REMOTO: ABRE UNA TERMINAL INTERACTIVA EN VIVO DENTRO DE GITHUB
+      # =========================================================================
+      - name: Start Interactive SSH Session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false # Permite que te conectes sin configurar llaves SSH privadas
