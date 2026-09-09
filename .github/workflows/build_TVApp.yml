@@ -1,0 +1,165 @@
+name: Build Matter TVApp (TVApp & .so libs)
+# JDK 11 & NDK 23.2.8568313
+
+on:
+  workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
+
+jobs:
+  build-tv-libraries:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code with Submodules
+        uses: actions/checkout@v4
+        with:
+          repository: 'project-chip/connectedhomeip'
+          ref: 'v1.3-branch' # Tu rama de mantenimiento estable v1.3 compatible con Alexa
+          submodules: 'recursive' # Obligatorio para descargar el núcleo de C++ de Matter
+
+      # =========================================================================
+      # RETROCOMPATIBILIDAD JDK: FORZAMOS VERSION 11 EXIGIDA POR LA RAMA v1.3
+      # =========================================================================
+      - name: Set up Java JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '11' # Sincronizado con los requisitos históricos de project-chip v1.3
+
+      # =========================================================================
+      # RETROCOMPATIBILIDAD NDK: INYECTAMOS LA VERSION EXACTA DE COMPILADOR CRUZADO
+      # =========================================================================
+      - name: Set up Android NDK r23b
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: '23.2.8568313' # NDK r23b compatible de forma nativa con los fuentes de C++
+
+      # =========================================================================
+      # ENTORNO SEGURO: PYTHON 3.11 EVITA EL CRASH DE LOS TIPOS DE DATOS (TYPEVAR)
+      # =========================================================================
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Fija el entorno nativo en la versión exacta que Matter 1.3 necesita
+
+      # =========================================================================
+      # SISTEMA DE PERSISTENCIA: CACHÉ ESTRUCTURAL PARA REAPROVECHAR COMPILACIONES
+      # =========================================================================
+      - name: Cache Matter Build Environment and Output Targets
+        uses: actions/cache@v4
+        with:
+          path: |
+            .environment
+            out
+          # La clave se amarra al hash del commit. Si el job falla, la clave se mantiene idéntica
+          # obligando a la máquina virtual a restaurar los archivos del intento anterior.
+          key: ${{ runner.os }}-matter-tvapp-cache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-matter-tvapp-cache-
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            ninja-build \
+            libglib2.0-dev \
+            libdbus-1-dev \
+            git \
+            unzip \
+            curl \
+            file
+
+      # =========================================================================
+      # INSTALACIÓN DE LA PLATAFORMA ANDROID 26 (Requisito de compilador cruzado)
+      # =========================================================================
+      - name: Install Missing Android 26 Platform SDK
+        run: |
+          echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
+          echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente."
+
+      # =========================================================================
+      # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO VARIABLE LEGIBLE Y DESPLIEGUE
+      # =========================================================================
+      - name: Inject Pre-built ZAP and Bypass Interactive Prompts
+        run: |
+          # [ESTRATEGIA BYPASS Editor Chat]
+          # 1. Conservamos y fijamos la URL pública exacta solicitada para entroncar la arquitectura x64
+          URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+
+          echo "INFRA: Descargando compilador ZAP público desde $URL_ZAP...: ${URL_ZAP}"
+          curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap.zip
+
+          ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+          URL_ZAP="https://github.com${ZAP_ASSET}"
+          echo "INFRA: Descargando de forma inequívoca desde la ruta: ${URL_ZAP}"
+          
+          # 2. Creamos la carpeta global de herramientas y extraemos el ZIP
+          sudo mkdir -p /usr/local/share/zap
+          sudo unzip -o -q zap.zip -d /usr/local/share/zap
+
+          # [NUEVO PARCHE CRÍTICO DE ENTORNO ZAP LAYOUT]
+          if [ -d "/usr/local/share/zap/zap-linux-x64" ]; then
+              echo "INFRA: Re-alineando árbol de directorios de Node.js..."
+              sudo cp -r /usr/local/share/zap/zap-linux-x64/* /usr/local/share/zap/
+              sudo rm -rf /usr/local/share/zap/zap-linux-x64
+          fi
+          
+          # 3. Creamos los enlaces de ejecución simbólicos globales para Linux
+          sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
+          sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap
+          sudo chmod +x /usr/local/share/zap/zap-cli
+          sudo chmod +x /usr/local/bin/zap-cli
+          sudo chmod +x /usr/local/bin/zap
+          
+          # 4. NEUTRALIZACIÓN DE CIPD: Vaciamos el archivo scripts/setup/zap.json.
+          if [ -f "scripts/setup/zap.json" ]; then
+              echo '{"packages": []}' > scripts/setup/zap.json
+              echo "INFRA: Archivo scripts/setup/zap.json neutralizado con éxito."
+          fi
+          
+          # 5. CORRECCIÓN CRÍTICA DE VARIABLE DE PRODUCCIÓN:
+          echo "ZAP_INSTALL_PATH=/usr/local/bin" >> $GITHUB_ENV
+          echo "INFRA: Entorno ZAP fijado con éxito en modo ejecución de producción."
+
+      - name: Compile TV App (ARM 32-bit / armeabi-v7a)
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          source scripts/activate.sh
+          # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
+          ./scripts/build/build_examples.py --target android-arm-tv-server gen
+          
+          # 2. Invocamos a Ninja apuntando directamente al target compilador nativo 'jni'
+          echo "INFRA: Iniciando compilación directa de libTvApp C++ mediante target jni..."
+          ninja -C out/android-arm-tv-server jni
+
+      - name: Compile TV App (ARM 64-bit / arm64-v8a)
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          source scripts/activate.sh
+          ./scripts/build/build_examples.py --target android-arm64-tv-server gen
+          
+          echo "INFRA: Iniciando compilación directa de libTvApp de 64 bits mediante target jni..."
+          ninja -C out/android-arm64-tv-server jni
+          
+      - name: Upload Compiled libTvApp.so Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-tv-app-so-libraries
+          path: |
+            out/android-arm-tv-server/**/*.so
+            out/android-arm64-tv-server/**/*.so
+
+      - name: Upload Compiled Matter TVApp APKs to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-tv-app-final-apks
+          path: |
+            examples/tv-app/android/app/build/outputs/apk/debug/*.apk      
