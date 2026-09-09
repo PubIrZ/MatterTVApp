@@ -8,27 +8,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Inject Pre-built ZAP Compiler Tool (1
-        run: |
-          # 1. Usamos una URL de Release Oficial Global de ZAP que SÍ es 100% pública y libre de logins
-          URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
-          
-          echo "INFRA: Iniciando descarga verificada desde almacén público..."
-          curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap-linux-x64.zip
-          
-          # 2. TEST DE INTEGRIDAD EN CALIENTE (Evita pasar páginas HTML como ZIPs falsos)
-          echo "=== AUDITORÍA DE INTEGRIDAD ==="
-          if unzip -t zap-linux-x64.zip > /dev/null 2>&1; then
-              echo "SUCCESS: El archivo zap.zip se descargó de forma íntegra y es un archivo ZIP binario válido."
-              echo "Tamaño real en disco:" && ls -lh zap-linux-x64.zip
-          else
-              echo "CRITICAL ERROR: El archivo descargado no es un ZIP válido (es un HTML de error o bloqueo de red)." >&2
-              echo "Primeras líneas del archivo capturado por la red para diagnóstico:"
-              head -n 10 zap-linux-x64.zip
-              exit 1
-          fi
-          echo "================================="
-          
+   
       - name: Checkout Code with Submodules
         uses: actions/checkout@v4
         with:
@@ -66,8 +46,27 @@ jobs:
       # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TEST DE INTEGRIDAD Y DESPLIEGUE
       # =========================================================================
 
-      - name: Inject Pre-built ZAP Compiler Tool (2   
+      - name: Inject Pre-built ZAP Compiler Tool (1
         run: |
+          # 1. Usamos una URL de Release Oficial Global de ZAP que SÍ es 100% pública y libre de logins
+          URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+          
+          echo "INFRA: Iniciando descarga verificada desde almacén público..."
+          curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap-linux-x64.zip
+          
+          # 2. TEST DE INTEGRIDAD EN CALIENTE (Evita pasar páginas HTML como ZIPs falsos)
+          echo "=== AUDITORÍA DE INTEGRIDAD ==="
+          if unzip -t zap-linux-x64.zip > /dev/null 2>&1; then
+              echo "SUCCESS: El archivo zap.zip se descargó de forma íntegra y es un archivo ZIP binario válido."
+              echo "Tamaño real en disco:" && ls -lh zap-linux-x64.zip
+          else
+              echo "CRITICAL ERROR: El archivo descargado no es un ZIP válido (es un HTML de error o bloqueo de red)." >&2
+              echo "Primeras líneas del archivo capturado por la red para diagnóstico:"
+              head -n 10 zap-linux-x64.zip
+              exit 1
+          fi
+          echo "================================="
+          
           # 3. Despliegue global en el sistema de la máquina virtual Linux de la nube
           sudo mkdir -p /usr/local/share/zap
           sudo unzip -q zap-linux-x64.zip -d /usr/local/share/zap
