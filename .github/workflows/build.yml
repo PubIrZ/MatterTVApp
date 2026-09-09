@@ -109,14 +109,16 @@ jobs:
         run: |
           # [ESTRATEGIA BYPASS Editor Chat]
           # 1. Conservamos y fijamos la URL pública exacta solicitada para entroncar la arquitectura x64
-          #URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
-          FAKE_URL="xxxxx://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
-          
-          # Mutamos la 'xxxxx' por 'https' de forma segura en la memoria interna del host
-          URL_ZAP=$(echo "$FAKE_URL" | sed 's/xxxxx/https/')
+          URL_ZAP="https://github.com/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+
+
           
           echo "INFRA: Descargando compilador ZAP público desde $URL_ZAP...: ${URL_ZAP}"
           curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap.zip
+
+          ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+          URL_ZAP="https://github.com${ZAP_ASSET}"
+          echo "INFRA: Descargando de forma inequívoca desde la ruta: ${URL_ZAP}"
           
           # 2. Creamos la carpeta global de herramientas en la máquina virtual Linux
           sudo mkdir -p /usr/local/share/zap
@@ -148,7 +150,7 @@ jobs:
         run: |
           source scripts/activate.sh
           # Ejecutamos la llamada limpia de destino combinada para la especificación v1.3
-          ./scripts/build/build_examples.py --target android-arm-tv-server build --verbose
+          ./scripts/build/build_examples.py  --log-level debug --target android-arm-tv-server build
 
       - name: Compile TV App (ARM 64-bit / arm64-v8a)
         env:
@@ -158,7 +160,7 @@ jobs:
           #NINJA_ARGS: "-v"          
         run: |
           source scripts/activate.sh
-          ./scripts/build/build_examples.py --target android-arm64-tv-server build --verbose
+          ./scripts/build/build_examples.py  --log-level debug --target android-arm64-tv-server build
 
       - name: Upload Compiled libTvApp.so Artifacts
         uses: actions/upload-artifact@v4
