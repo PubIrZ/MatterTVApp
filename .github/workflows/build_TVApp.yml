@@ -166,16 +166,23 @@ jobs:
           # del APK de Java y detenerse inmediatamente después de escupir los ficheros nativos .so.
           
           echo "INFRA: Aplicando parches sed quirúrgicos en android.py..."
-          # PARCHE 1 (Esquivar el bloqueo de Java 11 en subprocesos sdkmanager):
-          # Inyectamos de forma dinámica el JAVA_HOME de Java 17 en el diccionario de entorno de Python
-          # justo antes de que despache las llamadas hacia el sdkmanager corporativo.
-          # [CORREGIDO sed] Cambiamos los delimitadores de '/' a '|' para neutralizar las barras del path físico $JAVA_HOME_17_X64
+          ## PARCHE 1 (Esquivar el bloqueo de Java 11 en subprocesos sdkmanager):
+          ## Inyectamos de forma dinámica el JAVA_HOME de Java 17 en el diccionario de entorno de Python
+          ## justo antes de que despache las llamadas hacia el sdkmanager corporativo.
+          ## [CORREGIDO sed] Cambiamos los delimitadores de '/' a '|' para neutralizar las barras del path físico $JAVA_HOME_17_X64
+          #if [ -n "$JAVA_HOME_17_X64" ]; then
+          #    sed -i "s|def _Execute(self, cmdarray, title=None):|def _Execute(self, cmdarray, title=None):\n        import os\n        os.environ['JAVA_HOME'] = '$JAVA_HOME_17_X64'|g" scripts/build/builders/android.py
+          #fi
+
+          echo "INFRA: Aplicando parches sed quirúrgicos en android.py..."
+          # PARCHE 1: Inyectamos el desvío hacia Java 17 directamente dentro de la cadena literal de ejecución de bash.
+          # Esto garantiza que cuando el subproceso abra la consola oculta, se ejecute bajo el entorno de la clase 61.0.
           if [ -n "$JAVA_HOME_17_X64" ]; then
-              sed -i "s|def _Execute(self, cmdarray, title=None):|def _Execute(self, cmdarray, title=None):\n        import os\n        os.environ['JAVA_HOME'] = '$JAVA_HOME_17_X64'|g" scripts/build/builders/android.py
+              sed -i "s|'yes \| {} --licenses >/dev/null'.format(sdkmanager)|'export JAVA_HOME=$JAVA_HOME_17_X64 \&\& export PATH=\$JAVA_HOME/bin:\$PATH \&\& yes \| {} --licenses >/dev/null'.format(sdkmanager)|g" scripts/build/builders/android.py
           fi
-          
-          # PARCHE 2 (Burlar la restricción del APK completo en el Paso 1):
-          # Reemplazamos la orden de compilación global para forzar únicamente el target 'jni' de C++
+                   
+          # PARCHE 2: Evitar compilar Kotlin limitando la cola hacia el target nativo jni
+          # Reemplazamos la orden de compilación del APK completo que se ejecuta a continuación para forzar únicamente el target 'jni' de C++
           sed -i 's|self._runner.Run(cmdarray|if "ninja" in cmdarray: cmdarray.append("jni")\n        self._runner.Run(cmdarray|g' scripts/build/builders/android.py
               
           echo "INFRA: Ejecutando compilación cruzada limpia para ARM 32-bit..."
