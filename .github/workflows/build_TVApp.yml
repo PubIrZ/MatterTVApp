@@ -158,7 +158,7 @@ jobs:
  
           # activate.sh : Master environment initialization script. Boots up an isolated Python Virtual 
           # Environment (venv) located under the .environment/pigweed-venv/ and initializes Pigweed
-          echo "INFRA: activate.sh (Master environment initialization script): Initializes Pigweed
+          echo "INFRA: activate.sh (Master environment initialization script): Initializes Pigweed"
           source scripts/activate.sh
           
           # Usamos la directiva 'build' oficial del script de Python para envolver las variables de Pigweed,
