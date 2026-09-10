@@ -169,11 +169,13 @@ jobs:
           # Forzamos la eliminación de la carpeta .environment proveniente de la caché vieja con los errores
           # de ejecuciones anteriores para obligar a scripts/activate.sh a mapear los punteros de bootstrap 
           # en limpio sobre NDK r23c.
+          # Borramos de raíz cualquier rastro corrupto de la caché vieja para que activate.sh
+          # y GN mapeen las rutas absolutas del disco virtual de forma impecable desde cero.
           # Asi "activate.sh" se ve obligado a realizar un proceso de inicialización completa desde cero
           echo "INFRA: Purgando variables de entorno desalineadas de la caché..."
           rm -rf .environment
           rm -rf out
- 
+    
           # activate.sh : Master environment initialization script. Boots up an isolated Python Virtual 
           # Environment (venv) located under the .environment/pigweed-venv/ and initializes Pigweed
           echo "INFRA: activate.sh (Master environment initialization script): Initializes Pigweed"
@@ -192,6 +194,10 @@ jobs:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
+          # Purgamos también antes del paso de 64 bits para limpiar el árbol cruzado de Pigweed
+          echo "INFRA: Purgando variables para la compilación limpia de 64 bits..."
+          rm -rf .environment
+          rm -rf out      
           source scripts/activate.sh
           # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
           ./scripts/build/build_examples.py --target android-arm64-tv-server gen
