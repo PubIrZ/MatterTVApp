@@ -17,7 +17,7 @@ jobs:
           submodules: 'recursive' # Obligatorio para descargar el núcleo de C++ de Matter
 
       # =========================================================================
-      # MATRIZ DE CONFIGURACIÓN DE JAVA DU_AL: LEVANTAMOS AMBAS VERSIONES EN MEMORIA
+      # MATRIZ DE CONFIGURACIÓN DE JAVA DUAL: LEVANTAMOS AMBAS VERSIONES EN MEMORIA
       # =========================================================================
       - name: Set up Java JDK 17 (Para las herramientas del SDK de Google)
         uses: actions/setup-java@v4
@@ -26,12 +26,10 @@ jobs:
           java-version: '17'
 
       - name: Set up Java JDK 11 (Para las herramientas internas de Matter v1.3)
-              # Java JDK 11: Sincronizado con los requisitos históricos de project-chip v1.3
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '11' # Al ser el último paso de Java, el sistema operativo queda fijado en Java 11 por defecto
-
 
       # =========================================================================
       # RETROCOMPATIBILIDAD NDK: INYECTAMOS LA VERSION EXACTA DE COMPILADOR CRUZADO
@@ -40,9 +38,7 @@ jobs:
         id: setup-ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: 'r23c' # NDK '23.2.8568313' = r23c compatible de forma nativa con los fuentes de C++
-          # 23.2.8568313 is registered under the deployment release name r23c 
-          # Passing the canonical semantic identifier r23c
+          ndk-version: 'r23c' # Identificador semántico oficial que resuelve el error 404
 
       # =========================================================================
       # ENTORNO SEGURO: PYTHON 3.11 EVITA EL CRASH DE LOS TIPOS DE DATOS (TYPEVAR)
@@ -82,26 +78,13 @@ jobs:
             file
 
       # =========================================================================
-      # INSTALACIÓN DE LA PLATAFORMA ANDROID 26 (Requisito de compilador cruzado)
-      # =========================================================================
-     # - name: Install Missing Android 26 Platform SDK
-     #   run: |
-     #     echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
-     #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
-     #     $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
-     #     echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente."
-
-      # =========================================================================
-      # INSTALACIÓN AISLADA DE LA PLATAFORMA ANDROID 26 - JDK17 for sdkmanager
-      # temporarily point the terminal path to Java 17 just for the sdkmanager execution step
+      # INSTALACIÓN AISLADA DE LA PLATAFORMA ANDROID 26 (Parche de herencia validado)
       # =========================================================================
       - name: Install Missing Android 26 Platform SDK
         run: |
           echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
           
-          # [PARCHE MAESTRO DEFINITIVO: SECUESTRO DE VARIABLE JAVA_HOME]
-          # Forzamos la variable nativa global $JAVA_HOME a mutar su puntero temporalmente hacia Java 17.
-          # Esto rompe el bloqueo de clases y obliga al SdkManagerCli a validar los contratos bajo la versión 61.0.
+          # Forzamos la variable nativa global $JAVA_HOME a mutar su puntero de forma temporal hacia Java 17.
           if [ -n "$JAVA_HOME_17_X64" ]; then
               echo "INFRA: Forzando variable JAVA_HOME hacia el entorno compatible: $JAVA_HOME_17_X64"
               export JAVA_HOME="$JAVA_HOME_17_X64"
@@ -111,7 +94,6 @@ jobs:
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
           echo "SUCCESS: Archivo android.jar (API 26) inyectado de forma segura y transparente."
-
 
       # =========================================================================
       # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO VARIABLE LEGIBLE Y DESPLIEGUE
@@ -128,7 +110,7 @@ jobs:
           ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
           URL_ZAP="https://github.com${ZAP_ASSET}"
           echo "INFRA: Descargando de forma inequívoca desde la ruta: ${URL_ZAP}"
-          
+      
           # 2. Creamos la carpeta global de herramientas y extraemos el ZIP
           sudo mkdir -p /usr/local/share/zap
           sudo unzip -o -q zap.zip -d /usr/local/share/zap
@@ -157,24 +139,6 @@ jobs:
           echo "ZAP_INSTALL_PATH=/usr/local/bin" >> $GITHUB_ENV
           echo "INFRA: Entorno ZAP fijado con éxito en modo ejecución de producción."
 
-      ## Compila todo en un paso
-      #- name: Compile TV App (ARM 32-bit / armeabi-v7a)
-      #  env:
-      #    ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-      #    ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-      #  run: |
-      #    source scripts/activate.sh
-      #    ./scripts/build/build_examples.py --target android-arm-tv-server
-      #    
-      #- name: Compile TV App (ARM 64-bit / arm64-v8a) 
-      #  env:
-      #    ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-      #    ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-      #  run: |
-      #    source scripts/activate.sh
-      #    ./scripts/build/build_examples.py --target android-arm64-tv-server 
-      #
-
       # =========================================================================
       # RE-ALINEACIÓN MAESTRA DE DOS PASOS ENMASCARADOS POR EL PROXY DE MATTER
       # =========================================================================
@@ -190,8 +154,8 @@ jobs:
           
           echo "INFRA: Ejecutando compilación cruzada limpia para ARM 32-bit..."
           # Reemplazamos en caliente el comando de compilación global por una llamada explícita al target jni
-          sed -i 's/self._runner.Run(cmdarray/if "ninja" in cmdarray[0]: cmdarray.append("jni")\n        self._runner.Run(cmdarray/g' scripts/build/bui6lders/android.py
-        
+          sed -i 's/self._runner.Run(cmdarray/if "ninja" in cmdarray[0]: cmdarray.append("jni")\n        self._runner.Run(cmdarray/g' scripts/build/builders/android.py
+          
           ./scripts/build/build_examples.py --target android-arm-tv-server build
           
           echo "INFRA: Ejecutando compilación cruzada limpia para ARM 64-bit..."
@@ -210,48 +174,10 @@ jobs:
           chmod +x gradlew
           # Ejecutamos el empaquetador directo de Android sin pasar por los scripts rotos de Python
           ./gradlew assembleDebug
-          
-      # Compila todo en tres pasos
-      # =========================================================================
-      # PASO 1: COMPILACIÓN DE LIBRERÍAS NATIVAS (.SO) PURAS VÍA NINJA
-      # =========================================================================
-      - name: Compile TV App (ARM 32-bit / armeabi-v7a)
-        env:
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: |
-          source scripts/activate.sh
-          # 1. Generamos el plano de construcción estructural de Ninja   (gen = plano de arquitectura de Ninja)
-          ./scripts/build/build_examples.py --target android-arm-tv-server gen
-          # 2. Compilamos exclusivamente las librerías .so mediante el target nativo 'jni'
-          echo "INFRA: Construyendo binario libTvApp.so de 32 bits..."
-          ninja -C out/android-arm-tv-server jni
-
-      - name: Compile TV App (ARM 64-bit / arm64-v8a)
-        env:
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: |
-          source scripts/activate.sh
-          ./scripts/build/build_examples.py --target android-arm64-tv-server gen
-          echo "INFRA: Construyendo binario libTvApp.so de 64 bits..."
-          ninja -C out/android-arm64-tv-server jni
 
       # =========================================================================
-      # PASO 2: EMPAQUETADO DEL APK MEDIANTE LLAMADA DIRECTA A GRAD_LEW
+      # EXTRACCIÓN TRIPLE MANTENIDA: RECOGEMOS TANTO LAS .SO COMO EL APK EM_PAQUETADO
       # =========================================================================
-      - name: Build Final Android TV Application APK
-        env:
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: |
-          echo "=== INICIANDO ENLACE DE CON_TEXTO GRADLE ==="
-          cd examples/tv-app/android
-          chmod +x gradlew
-          # Ejecutamos el empaquetador directo de Android sin pasar por los scripts intermedios de Python
-          ./gradlew assembleDebug
-          
-          
       - name: Upload Compiled libTvApp.so Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -265,11 +191,4 @@ jobs:
         with:
           name: matter-tv-app-final-apks
           path: |
-            examples/tv-app/android/app/build/outputs/apk/debug/*.apk      
-
-      - name: Upload Compiled Matter TVApp APKs to Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: matter-tv-app-final-apks
-          path: |
-            examples/tv-app/android/app/build/outputs/apk/debug/*.apk      
+            examples/tv-app/android/app/build/outputs/apk/debug/*.apk
