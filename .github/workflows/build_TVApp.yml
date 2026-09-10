@@ -162,16 +162,31 @@ jobs:
           # pero le inyectamos una cirugía de comandos por terminal para forzar a Ninja a ignorar la compilación 
           # del APK de Java y detenerse inmediatamente después de escupir los ficheros nativos .so.
           
-          echo "INFRA: Aplicando parche sed quirúrgico en android.py para interceptar a Ninja..."
+          echo "INFRA: Aplicando parches sed quirúrgicos en android.py..."
+          # PARCHE 1 (Esquivar el bloqueo de Java 11 en subprocesos sdkmanager):
+          # Inyectamos de forma dinámica el JAVA_HOME de Java 17 en el diccionario de entorno de Python
+          # justo antes de que despache las llamadas hacia el sdkmanager corporativo.
+          if [ -n "$JAVA_HOME_17_X64" ]; then
+              sed -i "s/def _Execute(self, cmdarray, title=None):/def _Execute(self, cmdarray, title=None):\n        import os\n        os.environ['JAVA_HOME'] = '$JAVA_HOME_17_X64'/g" scripts/build/builders/android.py
+          fi
+          
+          # PARCHE 2 (Burlar la restricción del APK completo en el Paso 1):
+          # Reemplazamos la orden de compilación global para forzar únicamente el target 'jni' de C++
           sed -i 's/self._runner.Run(cmdarray/if "ninja" in cmdarray: cmdarray.append("jni")\n        self._runner.Run(cmdarray/g' scripts/build/builders/android.py
           
           echo "INFRA: Ejecutando compilación cruzada limpia para ARM 32-bit..."
-          # [PARCHE MAESTRO --CLEAN] Añadimos la bandera --clean de nivel global para purgar marcas viejas de la caché.
-          # Esto obliga a GN a reconstruir el plano de bajo nivel limpiamente bajo el NDK r23c correcto.
-          ./scripts/build/build_examples.py --clean --target android-arm-tv-server build
+          ./scripts/build/build_examples.py --target android-arm-tv-server build
           
           echo "INFRA: Ejecutando compilación cruzada limpia para ARM 64-bit..."
-          ./scripts/build/build_examples.py --clean --target android-arm64-tv-server build
+          ./scripts/build/build_examples.py --target android-arm64-tv-server build
+  
+          #echo "INFRA: Ejecutando compilación cruzada limpia para ARM 32-bit..."
+          ## [PARCHE --CLEAN] Añadimos la bandera --clean de nivel global para purgar marcas viejas de la caché.
+          ## Esto obliga a GN a reconstruir el plano de bajo nivel limpiamente bajo el NDK r23c correcto.
+          #./scripts/build/build_examples.py --clean --target android-arm-tv-server build
+          #
+          #echo "INFRA: Ejecutando compilación cruzada limpia para ARM 64-bit..."
+          #./scripts/build/build_examples.py --clean --target android-arm64-tv-server build
 
       #
 
