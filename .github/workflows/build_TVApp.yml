@@ -17,7 +17,7 @@ jobs:
           submodules: 'recursive' # Obligatorio para descargar el núcleo de C++ de Matter
 
       # =========================================================================
-      # MATRIZ DE CONFIGURACIÓN IN_VERSA: EL ORDEN DETERMINA LA VERSION POR DEFECTO
+      # MATRIZ DE CONFIGURACIÓN INVERSA: EL ORDEN DETERMINA LA VERSION POR DEFECTO
       # =========================================================================
       - name: Set up Java JDK 11 (Para las herramientas internas de Matter v1.3)
         uses: actions/setup-java@v4
@@ -25,11 +25,11 @@ jobs:
           distribution: 'zulu'
           java-version: '11'
 
-      - name: Set up Java JDK 17 (Fija Java 17 como la versión por defecto de la máquina)
+      - name: Set up Java JDK 17 (Para las herramientas del SDK de Google)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17' # Al ser el último paso, la máquina virtual usará Java 17 para el sdkmanager corporativo
+          java-version: '17' # Al ser el último paso de Java, el sistema operativo queda fijado en Java 17 por defecto
 
       # =========================================================================
       # RETROCOMPATIBILIDAD NDK: INYECTAMOS LA VERSION EXACTA DE COMPILADOR CRUZADO
@@ -57,6 +57,8 @@ jobs:
           path: |
             .environment
             out
+          # La clave se amarra al hash del commit. Si el job falla, la clave se mantiene idéntica
+          # obligando a la máquina virtual a restaurar los archivos del intento anterior.
           key: ${{ runner.os }}-matter-tvapp-cache-v2-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-matter-tvapp-cache-v2-
@@ -76,15 +78,15 @@ jobs:
             file
 
       # =========================================================================
-      # INSTALACIÓN DIRECTA DEL SDK 26 (Inmune gracias a Java 17 nativo)
+      # INSTALACIÓN AISLADA DE LA PLATAFORMA ANDROID 26 (Inmune gracias a Java 17 nativo)
       # =========================================================================
       - name: Install Missing Android 26 Platform SDK
         run: |
           echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
-          # Como la máquina está corriendo nativamente en Java 17, el sdkmanager no se bloquea
+          # Como la máquina está corriendo nativamente en Java 17, el sdkmanager no experimenta bloqueos
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
-          echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente."
+          echo "SUCCESS: Archivo android.jar (API 26) inyectado de forma segura y transparente."
 
       # =========================================================================
       # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO VARIABLE LEGIBLE Y DESPLIEGUE
@@ -92,60 +94,78 @@ jobs:
       - name: Inject Pre-built ZAP and Bypass Interactive Prompts
         run: |
           # [ESTRATEGIA BYPASS Editor Chat]
+          # Conservamos tu concatenación de variables limpias e inequívocas para entroncar la arquitectura x64
           ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
           URL_ZAP="https://github.com${ZAP_ASSET}"
           echo "INFRA: Descargando de forma inequívoca desde la ruta: ${URL_ZAP}"
+          
           curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap.zip
+          
+          # 2. Creamos la carpeta global de herramientas y extraemos el ZIP
           sudo mkdir -p /usr/local/share/zap
           sudo unzip -o -q zap.zip -d /usr/local/share/zap
 
+          # [NUEVO PARCHE CRÍTICO DE ENTORNO ZAP LAYOUT]
           if [ -d "/usr/local/share/zap/zap-linux-x64" ]; then
               echo "INFRA: Re-alineando árbol de directorios de Node.js..."
               sudo cp -r /usr/local/share/zap/zap-linux-x64/* /usr/local/share/zap/
               sudo rm -rf /usr/local/share/zap/zap-linux-x64
           fi
           
+          # 3. Creamos los enlaces de ejecución simbólicos globales para Linux
           sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
           sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap
           sudo chmod +x /usr/local/share/zap/zap-cli
           sudo chmod +x /usr/local/bin/zap-cli
           sudo chmod +x /usr/local/bin/zap
           
+          # 4. NEUTRALIZACIÓN DE CIPD: Vaciamos el archivo scripts/setup/zap.json.
           if [ -f "scripts/setup/zap.json" ]; then
               echo '{"packages": []}' > scripts/setup/zap.json
               echo "INFRA: Archivo scripts/setup/zap.json neutralizado con éxito."
           fi
+          
+          # 5. CORRECCIÓN CRÍTICA DE VARIABLE DE PRODUCCIÓN:
           echo "ZAP_INSTALL_PATH=/usr/local/bin" >> $GITHUB_ENV
           echo "INFRA: Entorno ZAP fijado con éxito en modo ejecución de producción."
 
       # =========================================================================
-      # RE-ALINEACIÓN MAESTRA CON ADAPTACIÓN EN CALIENTE DE VARIABLES INTERNAS
+      # RE-ALINEACIÓN MAESTRA DE DOS PASOS ENMASCARADOS POR EL PROXY DE MATTER
       # =========================================================================
       - name: Compile TV App Shared Libraries (ARM 32-bit & 64-bit)
         env:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
+          # [PARCHE MAESTRO ANTICORRUPCIÓN DE ENTORNO PIG_WEED]
+          # Forzamos la eliminación física preventiva de las carpetas temporales desalineadas.
+          # Esto obliga a scripts/activate.sh a mapear los punteros de bootstrap en limpio desde cero.
           echo "INFRA: Purgando variables de entorno desalineadas de la caché..."
           rm -rf .environment
           rm -rf out
+
           
           source scripts/activate.sh
           
-          echo "INFRA: Aplicando parche sed para limitar la cola hacia el target nativo jni..."
-          # Al estar la máquina en Java 17, el sdkmanager interno de Matter pasará las licencias sin romperse.
-          # Solo conservamos este parche para que Ninja no intente compilar el Kotlin viejo.
-          sed -i 's|self._runner.Run(cmdarray|if "ninja" in cmdarray: cmdarray.append("jni")\n        self._runner.Run(cmdarray|g' scripts/build/builders/android.py
+          echo "INFRA: Aplicando parches sed quirúrgicos en android.py..."
+          # PARCHE 1: Forzamos la inyección en caliente de Java 17 en la consola oculta de licencias de android.py.
+          # Mapeamos el delimitador por tubería '|' para neutralizar las barras diagonales del path.
+          if [ -n "$JAVA_HOME_17_X64" ]; then
+              sed -i "s|yes \| %s --licenses|export JAVA_HOME=$JAVA_HOME_17_X64 \&\& export PATH=\$JAVA_HOME/bin:\$PATH \&\& yes \| %s --licenses|g" scripts/build/builders/android.py
+          fi
+          
+          # PARCHE 2: Reemplazamos en caliente el comando de compilación global por una llamada explícita al target jni.
+          # Le ordenamos compilar únicamente la librería nativa de C++ 'libTvApp.so', esquivando Kotlinc.
+          sed -i 's|self._runner.Run(cmdarray|if "ninja" in cmdarray[0] or "ninja" in str(cmdarray): cmdarray.append("jni")\n        self._runner.Run(cmdarray|g' scripts/build/builders/android.py
               
-          echo "INFRA: Ejecutando compilación cruzada para ARM 32-bit (Forzando Java 11)..."
-          # Inyectamos la variable JAVA_HOME de Java 11 en la misma línea del comando de Python
+          echo "INFRA: Ejecutando compilación cruzada limpia para ARM 32-bit (Forzando Java 11)..."
           JAVA_HOME=$JAVA_HOME_11_X64 ./scripts/build/build_examples.py --target android-arm-tv-server build
           
-          echo "INFRA: Ejecutando compilación cruzada para ARM 64-bit (Forzando Java 11)..."
+          echo "INFRA: Ejecutando compilación cruzada limpia para ARM 64-bit (Forzando Java 11)..."
           JAVA_HOME=$JAVA_HOME_11_X64 ./scripts/build/build_examples.py --target android-arm64-tv-server build
 
       # =========================================================================
-      # PASO 2: EMPAQUETADO DEL APK EN GRADLEW (Forzando Java 11)
+      # PASO 2: EMPAQUETADO DEL APK MEDIANTE LLAMADA DIRECTA A GRAD_LEW
       # =========================================================================
       - name: Build Final Android TV Application APK
         env:
@@ -155,7 +175,7 @@ jobs:
           echo "=== INICIANDO ENLACE DE CON_TEXTO GRADLE DE DOS PASOS ==="
           cd examples/tv-app/android
           chmod +x gradlew
-          # Usamos el argumento nativo de Gradle para obligar al empaquetador a correr bajo Java 11
+          # Ejecutamos el empaquetador directo obligando a Gradle a correr aislado bajo Java 11
           ./gradlew -Dorg.gradle.java.home=$JAVA_HOME_11_X64 assembleDebug
 
       # =========================================================================
