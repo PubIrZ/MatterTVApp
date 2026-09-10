@@ -263,11 +263,16 @@ jobs:
           # Forzamos nativamente a Gradle a correr aislado bajo Java 11 usando el flag org.gradle.java.home.
           # Al pasarle las variables de compilación nativa cruzada directas, Gradle leerá los archivos .so
           # que Ninja dejó listos en la carpeta 'out/' e inyectará tanto platform-app como content-app.
+          # [CORRECCIÓN CRÍTICA DE ENLAZADO JAVA-SDK]
+          # 1. Forzamos -PmatterSdkSourceBuild=true para obligar a Gradle a enlazar las clases core de Java
+          #    (como AndroidChipPlatform) ubicadas en las carpetas comunes de third_party.
+          # 2. Apuntamos -PmatterSourceBuildAbiFilters a los ABIs procesados por Ninja en la carpeta out.
           ./gradlew -Dorg.gradle.java.home=$JAVA_HOME_11_X64 \
             -PmatterBuildSrcDir=${{ github.workspace }}/out/android-arm-tv-server \
-            -PmatterSdkSourceBuild=false \
+            -PmatterSdkSourceBuild=true \
+            -PmatterSourceBuildAbiFilters="armeabi-v7a,arm64-v8a" \
             assembleDebug
-
+            
       # =========================================================================
       # EXTRACCIÓN TRIPLE MANTENIDA: RECOGEMOS TANTO LAS .SO COMO EL APK EM_PAQUETADO
       # =========================================================================
