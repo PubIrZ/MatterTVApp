@@ -147,7 +147,17 @@ jobs:
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
+          # [PARCHE MAESTRO ANTICORRUPCIÓN DE ENTORNO PIG_WEED]
+          # Forzamos la eliminación de la carpeta .environment corrupta proveniente de la caché vieja
+          # para obligar a scripts/activate.sh a mapear los punteros de bootstrap en limpio sobre NDK r23c.
+          echo "INFRA: Purgando variables de entorno desalineadas de la caché..."
+          rm -rf .environment
+          rm -rf out
+
+          # activate.sh : Master environment initialization script. Boots up an isolated Python Virtual 
+          # Environment (venv) located under the .environment/pigweed-venv/ and initializes Pigweed
           source scripts/activate.sh
+          
           # Usamos la directiva 'build' oficial del script de Python para envolver las variables de Pigweed,
           # pero le inyectamos una cirugía de comandos por terminal para forzar a Ninja a ignorar la compilación 
           # del APK de Java y detenerse inmediatamente después de escupir los ficheros nativos .so.
