@@ -148,10 +148,11 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           # [PARCHE MAESTRO ANTICORRUPCIÓN DE ENTORNO PIG_WEED]
-          # Forzamos la eliminación de la carpeta .environment proveniente de la caché vieja
-          # para obligar a scripts/activate.sh a mapear los punteros de bootstrap en limpio sobre NDK r23c.
+          # Forzamos la eliminación de la carpeta .environment proveniente de la caché vieja con los errores
+          # de ejecuciones anteriores para obligar a scripts/activate.sh a mapear los punteros de bootstrap 
+          # en limpio sobre NDK r23c.
+          # Asi "activate.sh" se ve obligado a realizar un proceso de inicialización completa desde cero
           echo "INFRA: Purgando variables de entorno desalineadas de la caché..."
-          # activate.sh se ve obligado a realizar un proceso de inicialización completa desde cero
           rm -rf .environment
           rm -rf out
 
