@@ -225,8 +225,10 @@ jobs:
           echo "INFRA: Iniciando compilación directa de libTvApp C++ de 64 bits mediante target jni..."
           ninja -C out/android-arm64-tv-server jni
 
+
+
       # =========================================================================
-      # PASO 2: COMPILACIÓN A MAYORES DE LA APLICACIÓN COMPLETA KOTLIN VÍA GRADLEW
+      # PASO 2: COMPILACIÓN DE LA APLICACIÓN COMPLETA KOTLIN VÍA GRADLEW
       # =========================================================================
       - name: Build Final Android TV Application APK
         env:
@@ -237,12 +239,18 @@ jobs:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
           echo "=== INICIANDO CONSTRUCCIÓN KOTLIN COMPLETA MEDIANTE GRADLE ==="
-          cd examples/tv-app/android
+          # Entramos a la subcarpeta 'App' con mayúscula donde reside gradlew de forma física en la rama v1.3
+          cd examples/tv-app/android/App
           chmod +x gradlew
-          # Forzamos nativamente a Gradle a correr aislado bajo Java 11 usando el flag org.gradle.java.home.
-          # Esto evita que herede el Java 17 global y esquiva las caídas de compatibilidad de los lint de Kotlinc.
-          ./gradlew -Dorg.gradle.java.home=$JAVA_HOME_11_X64 assembleDebug
           
+          # Forzamos nativamente a Gradle a correr aislado bajo Java 11 usando el flag org.gradle.java.home.
+          # Al pasarle las variables de compilación nativa cruzada directas, Gradle leerá los archivos .so
+          # que Ninja dejó listos en la carpeta 'out/' e inyectará tanto platform-app como content-app.
+          ./gradlew -Dorg.gradle.java.home=$JAVA_HOME_11_X64 \
+            -PmatterBuildSrcDir=${{ github.workspace }}/out/android-arm-tv-server \
+            -PmatterSdkSourceBuild=false \
+            assembleDebug
+
       # =========================================================================
       # EXTRACCIÓN TRIPLE MANTENIDA: RECOGEMOS TANTO LAS .SO COMO EL APK EM_PAQUETADO
       # =========================================================================
