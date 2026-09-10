@@ -155,9 +155,10 @@ jobs:
           echo "INFRA: Purgando variables de entorno desalineadas de la caché..."
           rm -rf .environment
           rm -rf out
-
+ 
           # activate.sh : Master environment initialization script. Boots up an isolated Python Virtual 
           # Environment (venv) located under the .environment/pigweed-venv/ and initializes Pigweed
+          echo "INFRA: activate.sh (Master environment initialization script): Initializes Pigweed
           source scripts/activate.sh
           
           # Usamos la directiva 'build' oficial del script de Python para envolver las variables de Pigweed,
@@ -168,14 +169,15 @@ jobs:
           # PARCHE 1 (Esquivar el bloqueo de Java 11 en subprocesos sdkmanager):
           # Inyectamos de forma dinámica el JAVA_HOME de Java 17 en el diccionario de entorno de Python
           # justo antes de que despache las llamadas hacia el sdkmanager corporativo.
+          # [CORREGIDO sed] Cambiamos los delimitadores de '/' a '|' para neutralizar las barras del path físico $JAVA_HOME_17_X64
           if [ -n "$JAVA_HOME_17_X64" ]; then
-              sed -i "s/def _Execute(self, cmdarray, title=None):/def _Execute(self, cmdarray, title=None):\n        import os\n        os.environ['JAVA_HOME'] = '$JAVA_HOME_17_X64'/g" scripts/build/builders/android.py
+              sed -i "s|def _Execute(self, cmdarray, title=None):|def _Execute(self, cmdarray, title=None):\n        import os\n        os.environ['JAVA_HOME'] = '$JAVA_HOME_17_X64'|g" scripts/build/builders/android.py
           fi
           
           # PARCHE 2 (Burlar la restricción del APK completo en el Paso 1):
           # Reemplazamos la orden de compilación global para forzar únicamente el target 'jni' de C++
-          sed -i 's/self._runner.Run(cmdarray/if "ninja" in cmdarray: cmdarray.append("jni")\n        self._runner.Run(cmdarray/g' scripts/build/builders/android.py
-          
+          sed -i 's|self._runner.Run(cmdarray|if "ninja" in cmdarray: cmdarray.append("jni")\n        self._runner.Run(cmdarray|g' scripts/build/builders/android.py
+              
           echo "INFRA: Ejecutando compilación cruzada limpia para ARM 32-bit..."
           ./scripts/build/build_examples.py --target android-arm-tv-server build
           
