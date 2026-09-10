@@ -9,12 +9,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # =========================================================================
+      # SISTEMA DE PERSISTENCIA GLOBAL: RECUPERAMOS ENTORNOS Y METADATA GIT
+      # =========================================================================
+      - name: Cache Matter Build Environment and Git Submodules
+        uses: actions/cache@v4
+        id: build-cache
+        with:
+          path: |
+            .environment
+            out
+            .git/modules
+          # Amárramos la clave a la arquitectura v3 para forzar el refresco de los metadatos Git.
+          key: ${{ runner.os }}-matter-tvapp-cache-v3-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-matter-tvapp-cache-v3-
+
       - name: Checkout Code with Submodules
         uses: actions/checkout@v4
         with:
           repository: 'project-chip/connectedhomeip'
           ref: 'v1.3-branch' # Tu rama de mantenimiento estable v1.3 compatible con Alexa
-          submodules: 'recursive' # Obligatorio para descargar el núcleo de C++ de Matter
+          # Truco de optimización: Si la caché recuperó la metadata de .git/modules,
+          # reducimos el clon recursivo a profundidad 1 para evitar descargas duplicadas de red.
+          fetch-depth: 1
+          submodules: 'recursive'
 
       # =========================================================================
       # MATRIZ DE CONFIGURACIÓN DE JAVA DUAL: ADAPTADO PARA COMPILACIÓN KOTLIN
