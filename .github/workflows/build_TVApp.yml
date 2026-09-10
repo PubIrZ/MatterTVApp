@@ -152,14 +152,18 @@ jobs:
           # pero le inyectamos una cirugía de comandos por terminal para forzar a Ninja a ignorar la compilación 
           # del APK de Java y detenerse inmediatamente después de escupir los ficheros nativos .so.
           
-          echo "INFRA: Ejecutando compilación cruzada limpia para ARM 32-bit..."
-          # Reemplazamos en caliente el comando de compilación global por una llamada explícita al target jni
-          sed -i 's/self._runner.Run(cmdarray/if "ninja" in cmdarray[0]: cmdarray.append("jni")\n        self._runner.Run(cmdarray/g' scripts/build/builders/android.py
+          echo "INFRA: Aplicando parche sed quirúrgico en android.py para interceptar a Ninja..."
+          sed -i 's/self._runner.Run(cmdarray/if "ninja" in cmdarray: cmdarray.append("jni")\n        self._runner.Run(cmdarray/g' scripts/build/builders/android.py
           
-          ./scripts/build/build_examples.py --target android-arm-tv-server build
+          echo "INFRA: Ejecutando compilación cruzada limpia para ARM 32-bit..."
+          # [PARCHE MAESTRO --CLEAN] Añadimos la bandera --clean de nivel global para purgar marcas viejas de la caché.
+          # Esto obliga a GN a reconstruir el plano de bajo nivel limpiamente bajo el NDK r23c correcto.
+          ./scripts/build/build_examples.py --clean --target android-arm-tv-server build
           
           echo "INFRA: Ejecutando compilación cruzada limpia para ARM 64-bit..."
-          ./scripts/build/build_examples.py --target android-arm64-tv-server build
+          ./scripts/build/build_examples.py --clean --target android-arm64-tv-server build
+
+      #
 
       # =========================================================================
       # PASO 2: EMPAQUETADO DEL APK MEDIANTE LLAMADA DIRECTA A GRAD_LEW
