@@ -1,5 +1,6 @@
-name: Build Matter TVApp (only .so libs)
+name: Build Matter TVApp (TVApp & .so libs)
 # JDK 11 & NDK 23.2.8568313 (r23c)
+
 on:
   workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
 
@@ -128,6 +129,8 @@ jobs:
           sudo unzip -o -q zap.zip -d /usr/local/share/zap
 
           # [NUEVO PARCHE CRÍTICO DE ENTORNO ZAP LAYOUT]
+          # El ZIP desempaqueta una subcarpeta 'zap-linux-x64'. Movemos todo su contenido 
+          # hacia la raíz de '/usr/local/share/zap/' para que los scripts encuentren 'src-script/zap-start.js'
           if [ -d "/usr/local/share/zap/zap-linux-x64" ]; then
               echo "INFRA: Re-alineando árbol de directorios de Node.js..."
               sudo cp -r /usr/local/share/zap/zap-linux-x64/* /usr/local/share/zap/
@@ -156,19 +159,9 @@ jobs:
       # =========================================================================
       - name: Compile TV App (ARM 32-bit / armeabi-v7a)
         env:
-          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-        run: |
-          source scripts/activate.sh
-          # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
-          ./scripts/build/build_examples.py --target android-arm-tv-server gen
-          
-          # 2. TRUCO DE COMPILACIÓN SE_PARADA: Saltamos la envoltura de python y compilamos directo por jni
-          echo "INFRA: Iniciando compilación directa de libTvApp C++ mediante target jni..."
-          ninja -C out/android-arm-tv-server jni
-
-      - name: Compile TV App (ARM 64-bit / arm64-v8a)
-        env:
+          # [EDUCATIVO] CORRECCIÓN DE ENTORNO NDK COMPILADOR: 
+          # Forzamos la inyección en las variables globales de compilación nativa cruzada de Android.
+          # Esto anula la autodetención de NDK r27 del sistema operativo host e inyecta r25c en la tarea.
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -187,6 +180,20 @@ jobs:
           source scripts/activate.sh
           
           # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
+          ./scripts/build/build_examples.py --target android-arm-tv-server gen
+          
+          # 2. TRUCO DE COMPILACIÓN SE_PARADA: Saltamos la envoltura de python y compilamos directo por jni
+          echo "INFRA: Iniciando compilación directa de libTvApp C++ mediante target jni..."
+          ninja -C out/android-arm-tv-server jni
+
+      - name: Compile TV App (ARM 64-bit / arm64-v8a)
+        env:
+          # [EDUCATIVO] CORRECCIÓN DE ENTORNO NDK COMPILADOR: 
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          source scripts/activate.sh
+          # 1. Ejecutamos la fase 'gen' para construir el plano de arquitectura de Ninja en segundos
           ./scripts/build/build_examples.py --target android-arm64-tv-server gen
           
           # 2. Compilación directa de 64 bits esquivando Kotlinc mediante target jni
@@ -198,6 +205,9 @@ jobs:
       # =========================================================================
       - name: Build Final Android TV Application APK
         env:
+          # [EDUCATIVO] CORRECCIÓN DE ENTORNO NDK COMPILADOR: 
+          # Forzamos la inyección en las variables globales de compilación nativa cruzada de Android.
+          # Esto anula la autodetención de NDK r27 del sistema operativo host e inyecta r25c en la tarea.
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: |
@@ -209,7 +219,7 @@ jobs:
           ./gradlew -Dorg.gradle.java.home=$JAVA_HOME_11_X64 assembleDebug
           
       # =========================================================================
-      # EXTRACCIÓN DUAL: SUBIMOS TANTO LAS .SO AISLADAS COMO EL APK COMPLETO
+      # EXTRACCIÓN TRIPLE MANTENIDA: RECOGEMOS TANTO LAS .SO COMO EL APK EM_PAQUETADO
       # =========================================================================
       - name: Upload Compiled libTvApp.so Artifacts
         uses: actions/upload-artifact@v4
