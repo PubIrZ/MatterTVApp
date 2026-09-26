@@ -218,7 +218,7 @@ jobs:
           source scripts/activate.sh
 
           # Forzamos a GN a generar el árbol completo de dependencias para Android TV (ARM 32-bit)
-          ./examples/tv-app/android/third_party/connectedhomeip/tools/gn/bootstrap/gn.py gen out/android-arm-tv-server \
+          gn gen out/android-arm-tv-server \
             --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false' \
             --root=examples/tv-app/android/
 
