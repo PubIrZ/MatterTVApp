@@ -8,8 +8,6 @@ jobs:
   build-tv-libraries:
     runs-on: ubuntu-latest
 
-
-    steps:
     steps:
       # =========================================================================
       # 1. PERSISTENCIA TOTAL: Descargamos todo el código y el build anterior
