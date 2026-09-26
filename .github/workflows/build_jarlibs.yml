@@ -10,46 +10,50 @@ jobs:
 
 
     steps:
+    steps:
       # =========================================================================
-      # SISTEMA DE PERSISTENCIA GLOBAL: RECUPERAMOS ENTORNOS Y METADATA GIT
+      # 1. PERSISTENCIA TOTAL: Descargamos todo el código y el build anterior
       # =========================================================================
-      - name: Cache Matter Build Environment and Git Submodules
+      - name: Restore Complete Environment and Working Tree from Cache
         uses: actions/cache@v4
         id: build-cache
         with:
           path: |
             .environment
             out
-            .git/modules
-          # Amárramos la clave a la arquitectura v4 para forzar el refresco de los metadatos Git.
-          key: ${{ runner.os }}-matter-tvapp-cache-v4-${{ github.sha }}
+            .git
+            examples
+            third_party
+            src
+            build
+            scripts
+          # Al usar una clave base y restore-keys dinámicas, GitHub Actions
+          # siempre te entregará el último estado guardado (incluso de un build que falló)
+          key: ${{ runner.os }}-matter-fast-compile-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-matter-tvapp-cache-v4-
+            ${{ runner.os }}-matter-fast-compile-
 
       # =========================================================================
-      # CHECKOUT OPTIMIZADO (Bypass del borrado destructivo de la caché Git)
+      # 2. CHECKOUT DE EMERGENCIA: Solo se ejecuta si la caché global está vacía
       # =========================================================================
-      - name: Checkout Base Repository Core
+      - name: Emergency Checkout and Submodules (Only if Cache is Missing)
+        if: steps.build-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: 'project-chip/connectedhomeip'
-          ref: 'v1.3-branch' # Tu rama de mantenimiento estable v1.3 compatible con Alexa
-          # Truco de optimización: Si la caché recuperó la metadata de .git/modules,
-          # reducimos el clon recursivo a profundidad 1 para evitar descargas duplicadas de red.        
+          ref: 'v1.3-branch'
           fetch-depth: 1
-          # [SANEADO CRÍTICO] Forzamos clean: false para evitar que la acción destruya la carpeta .git/modules restaurada por la caché
-          clean: false
-          submodules: false # Manejamos los submódulos manualmente abajo en una fracción de segundo
+          submodules: true # En el primer intento descarga todo; en los siguientes se lo salta
 
-      - name: Sync and Restore Cached Git Submodules Instantly
+      - name: Verify Environment Status
         run: |
-          echo "=== RE-ENLAZANDO SUBMÓDULOS DESDE LA CACHÉ LOCAL ==="
-          # Inicializa el árbol de sub-repositorios leyendo la metadata segura restaurada de .git/modules
-          git submodule init
-          
-          # Actualiza los punteros físicos locales. Al estar los objetos ya en el disco virtual de la caché,
-          # Git ensamblará el código de Pigweed y C++ localmente saltándose la descarga de internet por completo.
-          git submodule update --recursive --depth 1
+          echo "=== CONTROL DE FLUJO DE TRABAJO ==="
+          if [ "${{ steps.build-cache.outputs.cache-hit }}" = "true" ]; then
+            echo "SUCCESS: El entorno completo fue restaurado desde la caché. Saltando descargas de red."
+          else
+            echo "WARNING: No se encontró caché previa. Ejecutando clonado inicial completo."
+          fi
+
 
 
       # =========================================================================
@@ -240,11 +244,6 @@ jobs:
           find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 
           # INVOCACIÓN QUIRÚRGICA A NINJA:
-          echo "INFRA: Compilando paquetes estables de clases Java..."
-          ninja -C out/android-arm-tv-server \
-            third_party/connectedhomeip/src/platform/android:android_sdk \
-            third_party/connectedhomeip/src/controller/java:chip_jni
-          # Le ordenamos explícitamente compilar únicamente las plataformas SDK de Java y las capas de bindings.
           echo "INFRA: Compilando paquetes estables de clases Java..."
           ninja -C out/android-arm-tv-server
 
