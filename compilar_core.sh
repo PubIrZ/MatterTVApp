@@ -17,6 +17,19 @@ fi
 # Buscamos de forma recursiva cualquier otra declaración de paquete ZAP de CIPD y la vaciamos
 find . -name "zap.json" -exec sh -c 'echo "{\"packages\": []}" > "{}"' \;
 
+# =========================================================================
+# ¡HOT PATCH DE COMPATIBILIDAD PYTHON 3.12 PARA PIGWEED!
+# Forzamos la actualización de typing_extensions en el sistema y en el venv interno
+# antes de activar el entorno, eliminando la excepción de TypeVar de raíz.
+# =========================================================================
+echo "INFRA: Aplicando parche de compatibilidad Python 3.12 para TypeVar..."
+pip install --upgrade typing-extensions --quiet || true
+
+if [ -d ".environment/pigweed-venv" ]; then
+    echo "INFRA: Inyectando parche directo dentro del entorno virtual de Pigweed..."
+    .environment/pigweed-venv/bin/pip install --upgrade typing-extensions --quiet || true
+fi
+
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
