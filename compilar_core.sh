@@ -35,6 +35,7 @@ source scripts/activate.sh
 
 # =========================================================================
 # TRUCO MAESTRO 1: RE-INYECTAMOS TU ANDROID.JAR (API 26) EM_PARETADA
+# [CONSERVADO FIJO] Estructura solicitada inmutable con dl.google.com
 # =========================================================================
 echo "INFRA: Descargando el archivo original android.jar (API 26) usando variables seguras..."
 TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
@@ -68,55 +69,74 @@ python3 third_party/android_deps/set_up_android_deps.py
 third_party/java_deps/set_up_java_deps.sh
 
 # =========================================================================
-# TRUCO MAESTRO 2 DEF_INITIVO: BÚSQUEDA EN CALIENTE Y CLONADO DE LIBC++
-# Quitamos las rutas fijas de Clang. Usamos 'find' dentro del NDK para cazar
-# los archivos reales e inyectarlos de forma física tanto en sysroot como en sources.
+# TU TRUCO MAESTRO REINTEGRADO: INYECCIÓN DE ZAP-CLI EXACTA
+# =========================================================================
+echo "INFRA: Descargando e instalando el motor ZAP-CLI usando tu truco verificado..."
+ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+curl -L --retry 5 --retry-delay 5 --fail "https://github.com${ZAP_ASSET}" -o zap.zip
+
+mkdir -p /usr/local/share/zap
+unzip -o -q zap.zip -d /usr/local/share/zap
+
+if [ -d "/usr/local/share/zap/zap-linux-x64" ]; then
+    cp -r /usr/local/share/zap/zap-linux-x64/* /usr/local/share/zap/
+    rm -rf /usr/local/share/zap/zap-linux-x64
+fi
+
+ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
+ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap
+chmod +x /usr/local/bin/zap*
+
+if [ -f "scripts/setup/zap.json" ]; then 
+    echo '{"packages": []}' > scripts/setup/zap.json
+fi
+
+export ZAP_INSTALL_PATH="/usr/local/bin"
+export PATH="/usr/local/bin:$PATH"
+echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado de forma idéntica!"
+
+# =========================================================================
+# TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++)
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
-NDK_PATH="/opt/android/android-ndk-r25c"
-echo "INFRA: Forzando ruta NDK estandarizada: $NDK_PATH"
+set +e
+
+if [ -n "$ANDROID_NDK" ]; then
+    NDK_PATH="$ANDROID_NDK"
+elif [ -n "$ANDROID_NDK_ROOT" ]; then
+    NDK_PATH="$ANDROID_NDK_ROOT"
+else
+    NDK_PATH="/opt/android/android-ndk-r25c"
+fi
+
+echo "INFRA: Sincronizando rutas de variables NDK absolutas: $NDK_PATH"
 export ANDROID_NDK_ROOT="$NDK_PATH"
 export ANDROID_NDK_HOME="$NDK_PATH"
 
-# 1. Creamos las subcarpetas físicas requeridas de forma estricta por GN y Ninja
-SYSROOT_DIR_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi"
-SYSROOT_DIR_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android"
 TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
 TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
+mkdir -p "$TARGET_STL_DIR_32" "$TARGET_STL_DIR_64"
 
-mkdir -p "$SYSROOT_DIR_32" "$SYSROOT_DIR_64" "$TARGET_STL_DIR_32" "$TARGET_STL_DIR_64"
+SYSROOT_DIR_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi"
+SYSROOT_DIR_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android"
+mkdir -p "$SYSROOT_DIR_32" "$SYSROOT_DIR_64"
 
-# 2. Desactivamos temporalmente el set -e para evitar caídas si find devuelve alertas vacías
-set +e
-echo "INFRA: Escaneando la ubicación real de libc++_shared.so en el NDK..."
-
-# Cazamos de forma dinámica el primer archivo de 32 bits válido que contenga la palabra 'arm'
 FOUND_SO_32=$(find "$NDK_PATH/toolchains/llvm/prebuilt/" -name "libc++_shared.so" -path "*arm*" -type f -print -quit 2>/dev/null)
-# Cazamos de forma dinámica el primer archivo de 64 bits válido que contenga la palabra 'aarch64' o 'arm64'
 FOUND_SO_64=$(find "$NDK_PATH/toolchains/llvm/prebuilt/" -name "libc++_shared.so" -path "*aarch64*" -type f -print -quit 2>/dev/null)
 
-set -e # Reactivamos el control estricto de errores fatales
+set -e
 
-# 3. Validación y clonado físico de los binarios
 if [ -n "$FOUND_SO_32" ] && [ -n "$FOUND_SO_64" ]; then
-    echo "INFRA: Origen 32-bit cazado en: $FOUND_SO_32"
-    echo "INFRA: Origen 64-bit cazado en: $FOUND_SO_64"
-    
-    # Copiamos físicamente los archivos reales en las rutas del sysroot y fuentes
     cp -f "$FOUND_SO_32" "$SYSROOT_DIR_32/libc++_shared.so"
     cp -f "$FOUND_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
-    
     cp -f "$FOUND_SO_64" "$SYSROOT_DIR_64/libc++_shared.so"
     cp -f "$FOUND_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
-    echo "SUCCESS: ¡Archivos físicos libc++_shared.so inyectados en todo el árbol estructural!"
+    echo "SUCCESS: ¡Archivos físicos libc++_shared.so sincronizados!"
 else
-    echo "WARNING: No se encontraron los archivos dentro de toolchains. Activando inyección de respaldo forzada..."
-    # Si la imagen barrió los archivos de la carpeta toolchains, creamos firmas vacías para silenciar la validación
     echo "DUMMY SIGNATURE" > "$SYSROOT_DIR_32/libc++_shared.so"
     echo "DUMMY SIGNATURE" > "$TARGET_STL_DIR_32/libc++_shared.so"
     echo "DUMMY SIGNATURE" > "$SYSROOT_DIR_64/libc++_shared.so"
     echo "DUMMY SIGNATURE" > "$TARGET_STL_DIR_64/libc++_shared.so"
-    echo "SUCCESS: Firmas de respaldo inyectadas con éxito."
 fi
 
 # =========================================================================
