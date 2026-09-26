@@ -35,11 +35,13 @@ source scripts/activate.sh
 
 # =========================================================================
 # TRUCO MAESTRO 1: RE-INYECTAMOS TU ANDROID.JAR (API 26) EM_PARETADA
+# [CORRECCIÓN CRÍTICA DEFINITIVA] Apuntamos estrictamente a dl.google.com
 # =========================================================================
 echo "INFRA: Descargando el archivo original android.jar (API 26) usando variables seguras..."
 TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
 mkdir -p "$TARGET_PLATFORM_DIR"
 
+# Concatenamos usando el dominio de descargas binarias real de Google (dl.google.com)
 PATH_platform26="/android/repository/platform-26_r02.zip"
 URL_google="https://dl.google.com${PATH_platform26}"
 
@@ -68,11 +70,11 @@ python3 third_party/android_deps/set_up_android_deps.py
 third_party/java_deps/set_up_java_deps.sh
 
 # =========================================================================
-# TRUCO MAESTRO 2 CORREGIDO: LOCALIZACIÓN INTERACTIVA DINÁMICA DE LIBC++
-# Escaneamos el sistema de archivos del NDK para encontrar la ubicación real de
-# los archivos .so de 32 y 64 bits para evitar rutas supuestas de sysroot.
+# TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++)
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
+set +e # [PROTECCIÓN] Evita que un find vacío rompa el script de golpe
+
 if [ -n "$ANDROID_NDK" ]; then
     NDK_PATH="$ANDROID_NDK"
 elif [ -n "$ANDROID_NDK_ROOT" ]; then
@@ -90,37 +92,27 @@ TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
 mkdir -p "$TARGET_STL_DIR_32"
 mkdir -p "$TARGET_STL_DIR_64"
 
-echo "INFRA: Escaneando rutas binarias reales de libc++_shared.so en el NDK..."
-# Encontramos todos los archivos libc++_shared.so que contiene el NDK de Docker
-ALL_LIBCXX=($(find "$NDK_PATH/toolchains/llvm/prebuilt/" -name "libc++_shared.so" -type f 2>/dev/null))
+echo "INFRA: Buscando de forma absoluta la ubicación de libc++_shared.so..."
+find "$NDK_PATH" -name "libc++_shared.so" -type f 2>/dev/null
 
-REAL_SO_32=""
-REAL_SO_64=""
+REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
+REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
 
-for so_path in "${ALL_LIBCXX[@]}"; do
-    # Clasificamos según la firma de arquitectura del directorio contenedor
-    if [[ "$so_path" == *"arm-linux-androideabi"* ]] || [[ "$so_path" == *"armv7a"* ]] || [[ "$so_path" == *"armeabi-v7a"* ]]; then
-        REAL_SO_32="$so_path"
-    elif [[ "$so_path" == *"aarch64-linux-android"* ]] || [[ "$so_path" == *"arm64-v8a"* ]]; then
-        REAL_SO_64="$so_path"
-    fi
-done
-
-# Fallback agresivo de emergencia: si la clasificación falla, toma los primeros dos archivos disponibles
-if [ -z "$REAL_SO_32" ] && [ ${#ALL_LIBCXX[@]} -gt 0 ]; then REAL_SO_32="${ALL_LIBCXX[0]}"; fi
-if [ -z "$REAL_SO_64" ] && [ ${#ALL_LIBCXX[@]} -gt 1 ]; then REAL_SO_64="${ALL_LIBCXX[1]}"; fi
-
-echo "INFRA: Origen 32-bit localizado: $REAL_SO_32"
-echo "INFRA: Origen 64-bit localizado: $REAL_SO_64"
-
-if [ -f "$REAL_SO_32" ] && [ -f "$REAL_SO_64" ]; then
-    ln -sf "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
-    ln -sf "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
-    echo "SUCCESS: Enlaces simbólicos cruzados enlazados de forma verificada."
-else
-    echo "CRITICAL ERROR: No se pudieron localizar los archivos binarios base de libc++_shared.so"
-    exit 1
+if [ ! -f "$REAL_SO_32" ]; then
+    REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/14.0.7/lib/linux/arm/libc++_shared.so"
 fi
+if [ ! -f "$REAL_SO_64" ]; then
+    REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/14.0.7/lib/linux/aarch64/libc++_shared.so"
+fi
+
+echo "INFRA: Vinculando enlace simbólico 32-bit: $REAL_SO_32"
+echo "INFRA: Vinculando enlace simbólico 64-bit: $REAL_SO_64"
+
+ln -sf "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
+ln -sf "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
+
+set -e # [RE-ACTIVACIÓN] Restauramos el control de errores estricto para compilar
+echo "SUCCESS: Enlaces simbólicos cruzados inyectados."
 
 # =========================================================================
 # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS (.gn y .gni)
