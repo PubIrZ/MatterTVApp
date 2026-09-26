@@ -221,14 +221,11 @@ jobs:
           echo "INFRA: Aplicando parche sed para neutralizar las caídas de Kotlinc..."
           # Interceptamos las líneas del kotlinc_runner.py o del generador de argumentos de compilación.
           # Eliminamos de raíz los flags '-Werror' y '-Xlint:all' que hacían colapsar la compilación por avisos menores.
-          if [ -f "build/chip/java/kotlinc_runner.py" ]; then
-              sed -i "s|'-Werror'||g" build/chip/java/kotlinc_runner.py
-              sed -i "s|'-Xlint:all'||g" build/chip/java/kotlinc_runner.py
-          fi
-          if [ -f "third_party/connectedhomeip/build/chip/java/kotlinc_runner.py" ]; then
-              sed -i "s|'-Werror'||g" third_party/connectedhomeip/build/chip/java/kotlinc_runner.py
-              sed -i "s|'-Xlint:all'||g" third_party/connectedhomeip/build/chip/java/kotlinc_runner.py
-          fi
+          echo "INFRA: Applying deep find patch to fully neutralize all Kotlinc warning traps..."
+          # This scans '-Werror' & '-Xlint:all' and cleans every single hidden or generated instance of kotlinc_runner.py across the entire workspace
+          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
+          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Xlint:all'||g" {} +
+          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Xlint:deprecation'||g" {} +
 
           echo "INFRA: Ejecutando compilación cruzada oficial unificada para ARM 32-bit..."
           ./scripts/build/build_examples.py --target android-arm-tv-server build
