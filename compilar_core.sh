@@ -29,14 +29,31 @@ echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
 # =========================================================================
-# ¡LA SOLUCIÓN AL ERROR DE ANDROID.JAR!
-# Forzamos al sdkmanager nativo del contenedor Docker a descargar la API 26
+# ¡LA SOLUCIÓN DEF_INITIVA AL PATH DE SDKMANAGER!
+# Intentamos usar el comando global directo de Docker. Si no está en el PATH,
+# localizamos dinámicamente su ubicación física exacta en el disco del búnker.
 # =========================================================================
-echo "INFRA: Inyectando la plataforma Android API 26 faltante en el SDK de Docker..."
+echo "INFRA: Localizando y ejecutando sdkmanager para inyectar Android API 26..."
 export ANDROID_HOME="/usr/local/lib/android/sdk"
-yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
-$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
-echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente en el búnker."
+
+# Buscador de respaldo en caliente por si el comando global no está mapeado
+if command -v sdkmanager &> /dev/null; then
+    SDK_BIN="sdkmanager"
+else
+    echo "INFRA: Buscando binario físico de sdkmanager en el contenedor..."
+    SDK_BIN=$(find /usr/local/ -name "sdkmanager" -type f -print -quit 2>/dev/null)
+fi
+
+if [ -n "$SDK_BIN" ]; then
+    echo "INFRA: Ejecutando sdkmanager desde: $SDK_BIN"
+    yes | $SDK_BIN --licenses > /dev/null || true
+    $SDK_BIN "platforms;android-26"
+    echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente en el búnker."
+else
+    echo "WARNING: No se pudo localizar sdkmanager de forma automática. Intentando bypass de ruta directa simplificada..."
+    # Intento de ruta cruda alternativa que usan ciertas variaciones de la imagen de Matter
+    /usr/local/lib/android/sdk/tools/bin/sdkmanager "platforms;android-26" || true
+fi
 
 echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
 python3 third_party/android_deps/set_up_android_deps.py
