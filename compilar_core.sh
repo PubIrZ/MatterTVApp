@@ -4,6 +4,15 @@
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
+# =========================================================================
+# ¡EL PARCHE CLAVE AN_TI-CIPD!
+# Le ordenamos a Pigweed que deje de intentar conectarse a los servidores de
+# Google/Fuchsia para bajar ZAP, ya que usaremos el binario inyectado.
+# =========================================================================
+echo "INFRA: Neutralizando dependencias interactivas de CIPD para ZAP..."
+export PW_ZAP_CIPD_RELEASE=""
+export PW_ZAP_NOT_REQUIRED=1
+
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
@@ -34,7 +43,6 @@ export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
 
 # Modificamos el script ejecutable de Python de forma segura. 
-# En lugar de romper la cabecera, inyectamos '-nowarn' de forma segura en los argumentos adicionales.
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
