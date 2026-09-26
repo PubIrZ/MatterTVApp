@@ -4,9 +4,6 @@
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
-# Add this ONLY if you want to force Ninja to clean its database layout:
-# rm -rf out
-
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
@@ -30,15 +27,15 @@ find . -name "*.gni" -exec sed -i 's|"-Xlint:all"||g' {} +
 
 # =========================================================================
 # ANULACIÓN COMPLETA EN EL MOTOR DE PIGWEED (KOTLINC)
-# Inyectamos el flag '-nowarn' directo en las variables de entorno de Linux
-# y alteramos el script wrapper para apagar las trabas estéticas de Kotlinc.
+# Modificamos el script wrapper para inyectar '-nowarn' al final del comando
 # =========================================================================
 echo "INFRA: Inyectando inhibidores de error '-nowarn' en el motor de Pigweed..."
 export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
 
-# Modificamos el script ejecutable de Python antes de que GN dibuje los planos
-find . -name "kotlinc_runner.py" -exec sed -i "s|kotlin_args = \[|kotlin_args = \['-nowarn',|g" {} +
+# Modificamos el script ejecutable de Python de forma segura. 
+# En lugar de romper la cabecera, inyectamos '-nowarn' de forma segura en los argumentos adicionales.
+find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
 echo "INFRA: Sincronizando árbol estructural de GN..."
@@ -46,7 +43,7 @@ gn gen out/android-arm-tv-server \
   --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
 
-# Parches secundarios de seguridad de última capa sobre archivos de ejecución en caliente dentro de out/
+# Parches secundarios de seguridad de última capa sobre archivos de configuración JSON
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 
 echo "INFRA: Ninja reanudará la compilación de forma incremental..."
