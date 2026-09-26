@@ -35,15 +35,13 @@ source scripts/activate.sh
 
 # =========================================================================
 # TRUCO MAESTRO 1: RE-INYECTAMOS TU ANDROID.JAR (API 26) EM_PARETADA
-# [CORRECCIÓN CRÍTICA DEFINITIVA] Apuntamos estrictamente a dl.google.com
 # =========================================================================
 echo "INFRA: Descargando el archivo original android.jar (API 26) usando variables seguras..."
 TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
 mkdir -p "$TARGET_PLATFORM_DIR"
 
-# Concatenamos usando el dominio de descargas binarias real de Google (dl.google.com)
 PATH_platform26="/android/repository/platform-26_r02.zip"
-URL_google="https://dl.google.com${PATH_platform26}"
+URL_google="https://google.com${PATH_platform26}"
 
 echo "INFRA: Conectando de forma directa al servidor de descargas: ${URL_google}"
 curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
@@ -70,11 +68,11 @@ python3 third_party/android_deps/set_up_android_deps.py
 third_party/java_deps/set_up_java_deps.sh
 
 # =========================================================================
-# TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++)
+# TRUCO MAESTRO 2 PARCHADO EXTRA-ESTRICTO (LIBC++ LAYOUT ENGANCHE)
+# Recreamos a la fuerza la ruta vieja solicitada por Ninja dentro de /cxx-stl/
+# y apuntamos el puntero al archivo real que vive dentro de /toolchains/
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
-set +e # [PROTECCIÓN] Evita que un find vacío rompa el script de golpe
-
 if [ -n "$ANDROID_NDK" ]; then
     NDK_PATH="$ANDROID_NDK"
 elif [ -n "$ANDROID_NDK_ROOT" ]; then
@@ -83,36 +81,28 @@ else
     NDK_PATH="/opt/android/android-ndk-r25c"
 fi
 
-echo "INFRA: Detectada ruta NDK del sistema: $NDK_PATH"
+echo "INFRA: Sincronizando rutas de variables NDK absolutas: $NDK_PATH"
 export ANDROID_NDK_ROOT="$NDK_PATH"
 export ANDROID_NDK_HOME="$NDK_PATH"
 
+# 1. Recreamos la ruta física exacta que Ninja está exigiendo en tu log de error
 TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
 TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
 mkdir -p "$TARGET_STL_DIR_32"
 mkdir -p "$TARGET_STL_DIR_64"
 
-echo "INFRA: Buscando de forma absoluta la ubicación de libc++_shared.so..."
-find "$NDK_PATH" -name "libc++_shared.so" -type f 2>/dev/null
-
+# 2. Apuntamos a los archivos binarios reales que viven dentro de la carpeta /toolchains/ de la imagen de Docker
 REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
 REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
 
-if [ ! -f "$REAL_SO_32" ]; then
-    REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/14.0.7/lib/linux/arm/libc++_shared.so"
-fi
-if [ ! -f "$REAL_SO_64" ]; then
-    REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/14.0.7/lib/linux/aarch64/libc++_shared.so"
-fi
+echo "INFRA: Forzando enlace simbólico desde toolchains hacia la ruta esperada de fuentes..."
+echo "De: $REAL_SO_32"
+echo "Hacia: $TARGET_STL_DIR_32/libc++_shared.so"
 
-echo "INFRA: Vinculando enlace simbólico 32-bit: $REAL_SO_32"
-echo "INFRA: Vinculando enlace simbólico 64-bit: $REAL_SO_64"
-
+# Enlazamos de forma atómica sobreescribiendo cualquier rastro viejo
 ln -sf "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
 ln -sf "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
-
-set -e # [RE-ACTIVACIÓN] Restauramos el control de errores estricto para compilar
-echo "SUCCESS: Enlaces simbólicos cruzados inyectados."
+echo "SUCCESS: ¡Puente físico de redirección completado con total éxito!"
 
 # =========================================================================
 # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS (.gn y .gni)
