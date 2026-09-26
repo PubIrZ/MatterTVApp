@@ -8,10 +8,7 @@ jobs:
   build-tv-docker:
     runs-on: ubuntu-latest
     
-    # =========================================================================
-    # EL ESTÁNDAR DE LA INDUSTRIA: Todo se ejecuta dentro del búnker de Docker.
-    # Esta imagen oficial ya viene con el NDK, JDK y Python congelados en la versión compatible.
-    # =========================================================================
+    # Todo se ejecuta dentro del búnker de Docker oficial de Matter
     container:
       image: ghcr.io/project-chip/chip-build-android:126
 
@@ -25,12 +22,15 @@ jobs:
           repository: 'project-chip/connectedhomeip'
           ref: 'v1.3-branch' # Tu rama estable compatible con Alexa y Android TV
           submodules: 'recursive' # Obligatorio para el núcleo de C++ de Matter
+
       # =========================================================================
       # 2. PARCHES DE INHIBICIÓN Y COMPILACIÓN QUIRÚRGICA
       # =========================================================================
       - name: Run Clean Generation and Compile Core JARs
+        # [SOLUCIÓN DE RAÍZ] Forzamos a GitHub a ejecutar este paso usando Bash puro
+        shell: bash
         run: |
-          # 1. Activamos las herramientas internas de Pigweed que ya vienen dentro de Docker
+          # 1. Activamos las herramientas de Pigweed usando Bash nativo de forma segura
           source scripts/activate.sh
 
           # 2. Descargamos las dependencias base lógicas de Google Maven
@@ -58,7 +58,7 @@ jobs:
           find . -name "kotlinc_runner.py" -exec sed -i "s|kotlin_args = \[|kotlin_args = \['-nowarn',|g" {} +
           find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
-          # 4. Generamos el árbol limpio. Al estar en Docker, lee las variables nativas del contenedor automáticamente.
+          # 4. Generamos el árbol limpio
           gn gen out/android-arm-tv-server \
             --args='target_os="android" target_cpu="arm" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
             --root=examples/tv-app/android/
