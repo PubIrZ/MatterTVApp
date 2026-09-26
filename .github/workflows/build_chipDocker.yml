@@ -1,5 +1,4 @@
-.name: Docker - Build and Freeze Matter Environment
-# Este workflow clona el código fuente y empaqueta un búnker Docker personalizado
+name: Docker - Build and Freeze Matter Environment
 
 on:
   workflow_dispatch: # Lanzamiento manual desde la interfaz web
@@ -10,7 +9,7 @@ jobs:
     permissions:
       contents: read
       packages: write # Permiso obligatorio para poder subir la imagen a tu perfil de GitHub
-
+    
     steps:
       - name: Checkout Local Repository (PubIrZ/MatterTVApp)
         uses: actions/checkout@v4
@@ -22,6 +21,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Este paso oficial genera los tags y formatea automáticamente todo a minúsculas
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/matter-frozen-env
+          tags: |
+            type=raw,value=latest
+
       # =========================================================================
       # CONSTRUCCIÓN DINÁMICA DEL BÚNKER: Inyectamos el SDK v1.3 dentro de Docker
       # =========================================================================
@@ -31,5 +39,6 @@ jobs:
           context: .
           file: ./dockerfile
           push: true
-          # Expresión corregida en minúsculas dinámicas y libre de errores sintácticos
-          tags: ghcr.io/${{ lower(github.actor) }}/matter-frozen-env:latest
+          # Usamos la salida del paso anterior que ya viene sanitizada y en minúsculas
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
