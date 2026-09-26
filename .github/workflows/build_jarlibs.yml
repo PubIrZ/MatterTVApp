@@ -140,7 +140,7 @@ jobs:
           cd matter-sdk
           
           echo "INFRA: Otorgando permisos de ejecución al script espejo..."
-          chmod +x compilar_core.sh
+          chmod +x compilar_core_build_jarlibs.sh
           
           echo "INFRA: Lanzando proceso de compilación..."
           ./compilar_core.sh
