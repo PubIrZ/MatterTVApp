@@ -246,9 +246,7 @@ jobs:
             third_party/connectedhomeip/src/controller/java:chip_jni
           # Le ordenamos explícitamente compilar únicamente las plataformas SDK de Java y las capas de bindings.
           echo "INFRA: Compilando paquetes estables de clases Java..."
-          ninja -C out/android-arm-tv-server \
-            third_party/connectedhomeip/src/platform/android:android_sdk \
-            third_party/connectedhomeip/src/controller/java:chip_jni
+          ninja -C out/android-arm-tv-server
 
       # =========================================================================
       # EXTRACCIÓN Y SUBIDA AUTOMÁTICA DE LOS ARCHIVOS JAR DE CLASES
