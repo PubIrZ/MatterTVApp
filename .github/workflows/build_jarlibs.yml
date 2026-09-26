@@ -136,11 +136,11 @@ jobs:
         run: |
           echo "INFRA: Copiando y alineando script dinámico dentro del SDK de Matter..."
           # Inyectamos tu script dentro de la subcarpeta que demostró ser exitosa en el test
-          cp compilar_core.sh matter-sdk/
+          cp compilar_core_build_jarlibs.sh matter-sdk/
           cd matter-sdk
           
           echo "INFRA: Otorgando permisos de ejecución al script espejo..."
-          chmod +x ./compilar_core_build_jarlibs.sh
+          chmod +x compilar_core_build_jarlibs.sh
           
           echo "INFRA: Lanzando proceso de compilación..."
           ./compilar_core_build_jarlibs.sh
