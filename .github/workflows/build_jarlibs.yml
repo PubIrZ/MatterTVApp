@@ -10,9 +10,9 @@ jobs:
 
     steps:
       # =========================================================================
-      # 1. RECUPERACIÓN TOTAL DE DISCO (Restauramos absolutamente todo)
+      # 1. PERSISTENCIA INQUEBRANTABLE (Aguanta entre diferentes "Run Workflows")
       # =========================================================================
-      - name: Restore Complete Workspace from Cache
+      - name: Restore Complete Environment and Working Tree from Cache
         uses: actions/cache@v4
         id: build-cache
         with:
@@ -35,25 +35,31 @@ jobs:
             ${{ github.workspace }}/BUILD.gn
             ${{ github.workspace }}/gn_build.sh
             ${{ github.workspace }}/pigweed.json
-          # Usamos una clave que mantenga consistencia para re-runs
-          key: ${{ runner.os }}-matter-incremental-${{ github.sha }}
+          # USAMOS UNA CLAVE FIJA PRINCIPAL. Esto garantiza que un "Run workflow" nuevo
+          # intercepte y descargue siempre el progreso del flujo anterior.
+          key: ${{ runner.os }}-matter-global-core-v1
           restore-keys: |
-            ${{ runner.os }}-matter-incremental-
+            ${{ runner.os }}-matter-global-core-
 
       # =========================================================================
-      # 2. CHECKOUT DE EMERGENCIA (SÓLO SI LA CACHÉ ESTÁ EN BLANCO)
+      # 2. BYPASS DE DESCARGAS: Validamos existencia real de archivos en disco
       # =========================================================================
-      # Reemplazamos la acción de checkout por un script que evalúa físicamente el disco.
-      # Si la caché inyectó el código anterior, este paso se saltará por completo y NO borrará nada.
-      - name: Emergency Checkout (Only if Disk is completely empty)
+      - name: Evaluate Working Tree and Skip Checkout
+        id: eval-disk
         run: |
           if [ -d "${{ github.workspace }}/src" ] && [ "$(ls -A ${{ github.workspace }}/src 2>/dev/null)" ]; then
-            echo "INFRA: Código fuente detectado en el disco virtual. Saltando clonación destructiva."
+            echo "SKIP_CHECKOUT=true" >> $GITHUB_ENV
+            echo "INFRA: Código fuente completo en disco virtual. Saltando clonación destructiva."
           else
-            echo "INFRA: Disco vacío. Descargando el repositorio por primera vez..."
-            git clone --depth 1 --branch v1.3-branch https://github.com .
-            git submodule update --init --recursive --depth 1
+            echo "SKIP_CHECKOUT=false" >> $GITHUB_ENV
+            echo "INFRA: Disco vacío. Activando descarga inicial de emergencia..."
           fi
+
+      - name: Emergency Checkout (Only executed on the very first run)
+        if: env.SKIP_CHECKOUT == 'false'
+        run: |
+          git clone --depth 1 --branch v1.3-branch "https://github.com/project-chip/connectedhomeip.git" .
+          git submodule update --init --recursive --depth 1
 
           
       # =========================================================================
