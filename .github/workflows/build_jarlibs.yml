@@ -12,8 +12,8 @@ jobs:
       # =========================================================================
       # 1. PERSISTENCIA INQUEBRANTABLE (Aguanta entre diferentes "Run Workflows")
       # =========================================================================
-      - name: Restore Complete Environment and Working Tree from Cache
-        uses: actions/cache@v4
+      - name: Restore Complete Workspace from Cache
+        uses: actions/cache/restore@v4
         id: build-cache
         with:
           path: |
@@ -23,65 +23,51 @@ jobs:
             ${{ github.workspace }}/examples
             ${{ github.workspace }}/.git
             ${{ github.workspace }}/build
-            ${{ github.workspace }}/build_overrides
-            ${{ github.workspace }}/config
-            ${{ github.workspace }}/credentials
-            ${{ github.workspace }}/data_model
-            ${{ github.workspace }}/docs
-            ${{ github.workspace }}/integrations
-            ${{ github.workspace }}/scripts
             ${{ github.workspace }}/src
-            ${{ github.workspace }}/zzz_generated
-            ${{ github.workspace }}/BUILD.gn
-            ${{ github.workspace }}/gn_build.sh
-            ${{ github.workspace }}/pigweed.json
-          # USAMOS UNA CLAVE FIJA PRINCIPAL. Esto garantiza que un "Run workflow" nuevo
-          # intercepte y descargue siempre el progreso del flujo anterior.
           key: ${{ runner.os }}-matter-global-core-v1
           restore-keys: |
             ${{ runner.os }}-matter-global-core-
 
-      # =========================================================================
-      # 2. BYPASS DE DESCARGAS: Validamos existencia real de archivos en disco
-      # =========================================================================
       - name: Evaluate Working Tree and Skip Checkout
         id: eval-disk
         run: |
           if [ -d "${{ github.workspace }}/src" ] && [ "$(ls -A ${{ github.workspace }}/src 2>/dev/null)" ]; then
-            echo "SKIP_CHECKOUT=true" >> $GITHUB_ENV
-            echo "INFRA: Código fuente completo en disco virtual. Saltando clonación destructiva."
+            echo "SKIP_SETUP=true" >> $GITHUB_ENV
+            echo "INFRA: Código fuente detectado en el disco virtual. Saltando configuraciones e inyecciones iniciales pesadas."
           else
-            echo "SKIP_CHECKOUT=false" >> $GITHUB_ENV
-            echo "INFRA: Disco vacío. Activando descarga inicial de emergencia..."
+            echo "SKIP_SETUP=false" >> $GITHUB_ENV
+            echo "INFRA: Disco vacío. Activando inicialización completa de entorno..."
           fi
 
-      - name: Emergency Checkout (Only executed on the very first run)
-        if: env.SKIP_CHECKOUT == 'false'
+      - name: Emergency Checkout
+        if: env.SKIP_SETUP == 'false'
         run: |
-          git clone --depth 1 --branch v1.3-branch "https://github.com/project-chip/connectedhomeip.git" .
+          PATH_project="/project-chip/connectedhomeip.git"
+          URL_github="https://github.com${PATH_project}"
+          git clone --depth 1 --branch v1.3-branch "${URL_github}" .
           git submodule update --init --recursive --depth 1
 
-          
       # =========================================================================
       # MATRIZ DE CONFIGURACIÓN DE JAVA DUAL: ADAPTADO PARA COMPILACIÓN KOTLIN
       # =========================================================================
       - name: Set up Java JDK 11 (Para el compilador interno de Gradle/Kotlin v1.3)
+        if: env.SKIP_SETUP == 'false'
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '11'
 
       - name: Set up Java JDK 17 (Fija Java 17 por defecto para el host y sdkmanager)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v4 # [OBLIGATORIO SIN IF] Se ejecuta siempre (tarda 1s) para registrar los punteros de entorno del Host Runner
         with:
           distribution: 'zulu'
-          java-version: '17' # Al ser el último paso, la máquina virtual usará Java 17 por defecto para no bloquear las licencias
+          java-version: '17'
 
       # =========================================================================
       # RETROCOMPATIBILIDAD NDK: INYECTAMOS EL SDK r25c ESTABLE DE RESPALDO
       # =========================================================================
       - name: Set up Android NDK r25c
-        id: setup-ndk
+        id: setup-ndk # [OBLIGATORIO SIN IF] Inyecta las variables dinámicas de entorno ANDROID_NDK_ROOT requeridas por GN y Ninja en cada inicio
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: 'r25c'
@@ -90,26 +76,13 @@ jobs:
       # ENTORNO SEGURO: PYTHON 3.11 EVITA EL CRASH DE LOS TIPOS DE DATOS (TYPEVAR)
       # =========================================================================
       - name: Set up Python 3.11
+        if: env.SKIP_SETUP == 'false'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Fija el entorno nativo en la versión exacta que Matter 1.3 necesita
-
-      # =========================================================================
-      # SISTEMA DE PERSISTENCIA: CACHÉ ESTRUCTURAL PARA REAPROVECHAR COMPILACIONES
-      # =========================================================================
-      - name: Cache Matter Build Environment and Output Targets
-        uses: actions/cache@v4
-        with:
-          path: |
-            .environment
-            out
-          # La clave se amarra al hash del commit. Si el job falla, la clave se mantiene idéntica
-          # obligando a la máquina virtual a restaurar los archivos del intento anterior.
-          key: ${{ runner.os }}-matter-tvapp-cache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-matter-tvapp-cache-
+          python-version: '3.11'
 
       - name: Install System Dependencies
+        if: env.SKIP_SETUP == 'false'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -127,6 +100,7 @@ jobs:
       # INSTALACIÓN DE LA PLATAFORMA ANDROID 26 (Requisito de compilador cruzado)
       # =========================================================================
       - name: Install Missing Android 26 Platform SDK
+        if: env.SKIP_SETUP == 'false'
         run: |
           echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
@@ -137,22 +111,18 @@ jobs:
       # PARCHE MAESTRO NDK COMPILER LAYOUT MATCHING: TRUCO DE ENLACE SIMBÓLICO
       # =========================================================================
       - name: Patch NDK r25c Directory Structure for Matter 1.3
+        if: env.SKIP_SETUP == 'false'
         run: |
           echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
           NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
-          
-          # In NDK versions r23 through r25, Google changed how the NDK layout handles the Shared C++ runtime library (libc++_shared.so).
-          # 1. Recreamos la ruta física esperada por el viejo script de Matter 1.3's build system     
           TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
           TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
           mkdir -p "$TARGET_STL_DIR_32"
           mkdir -p "$TARGET_STL_DIR_64"
           
-          # 2. Localizamos la ruta real donde el NDK r25 aloja el archivo binario nativo libc++_shared.so
           REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
           REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
           
-          # 3. Forzamos enlaces simbólicos cruzados (Symlinks) para engañar al motor de Ninja
           ln -s "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
           ln -s "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
           echo "SUCCESS: Enlaces simbólicos de libc++_shared.so creados con total éxito."
@@ -161,71 +131,51 @@ jobs:
       # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO VARIABLE LEGIBLE Y DESPLIEGUE
       # =========================================================================
       - name: Inject Pre-built ZAP and Bypass Interactive Prompts
+        if: env.SKIP_SETUP == 'false'
         run: |
-          # [ESTRATEGIA BYPASS Editor Chat]
-          # Conservamos tu concatenación de variables limpias e inequívocas para entroncar la arquitectura x64
           ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
           URL_ZAP="https://github.com${ZAP_ASSET}"
           echo "INFRA: Descargando de forma inequívoca desde la ruta: ${URL_ZAP}"
           
           curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap.zip
-
-          # 2. Creamos la carpeta global de herramientas en la máquina virtual Linux
           sudo mkdir -p /usr/local/share/zap
           sudo unzip -o -q zap.zip -d /usr/local/share/zap
 
-          # [NUEVO PARCHE CRÍTICO DE ENTORNO ZAP LAYOUT]
-          # El ZIP desempaqueta una subcarpeta 'zap-linux-x64'. Movemos todo su contenido 
-          # hacia la raíz de '/usr/local/share/zap/' para que los scripts encuentren 'src-script/zap-start.js'
           if [ -d "/usr/local/share/zap/zap-linux-x64" ]; then
               echo "INFRA: Re-alineando árbol de directorios de Node.js..."
               sudo cp -r /usr/local/share/zap/zap-linux-x64/* /usr/local/share/zap/
               sudo rm -rf /usr/local/share/zap/zap-linux-x64
           fi
           
-          # 3. Creamos los enlaces de ejecución simbólicos globales para Linux
           sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
           sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap
           sudo chmod +x /usr/local/share/zap/zap-cli
           sudo chmod +x /usr/local/bin/zap-cli
           sudo chmod +x /usr/local/bin/zap
           
-          # 4. NEUTRALIZACIÓN DE CIPD: Vaciamos el archivo scripts/setup/zap.json.
           if [ -f "scripts/setup/zap.json" ]; then
               echo '{"packages": []}' > scripts/setup/zap.json
               echo "INFRA: Archivo scripts/setup/zap.json neutralizado con éxito."
           fi
           
-          # 5. CORRECCIÓN CRÍTICA DE VARIABLE DE PRODUCCIÓN:
           echo "ZAP_INSTALL_PATH=/usr/local/bin" >> $GITHUB_ENV
-          echo "INFRA: Entorno ZAP fijado con éxito en modo ejecución de producción."
-
       # =========================================================================
-      # COMPILACIÓN PARCIAL: SOLO OBJETIVOS JAVA/JAR CORE
+      # COMPILACIÓN LIMPIA DESDE CERO EN CASO DE FALLO (Solo out es purgado)
       # =========================================================================
       - name: Compile Core Java JAR Classes via Target Ninja
         env:
-          # [EDUCATIVO] CORRECCIÓN DE ENTORNO NDK COMPILADOR: 
-          # Forzamos la inyección en las variables globales de compilación nativa cruzada de Android.
-          # Esto anula la autodetención de NDK r27 del sistema operativo host e inyecta r25c en la tarea.
           ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ZAP_INSTALL_PATH: /usr/local/bin
         run: |
-          # [PARCHE MAESTRO ANTICORRUPCIÓN DE ENTORNO PIG_WEED]
-          # Forzamos la eliminación de la carpeta .environment proveniente de la caché vieja con los errores
-          # de ejecuciones anteriores para obligar a scripts/activate.sh a mapear los punteros de bootstrap 
-          # en limpio sobre NDK r23c.
-          # Borramos de raíz cualquier rastro corrupto de la caché vieja para que activate.sh
-          # y GN mapeen las rutas absolutas del disco virtual de forma impecable desde cero.
-          # Asi "activate.sh" se ve obligado a realizar un proceso de inicialización completa desde cero
-          echo "INFRA: Purgando variables de entorno desalineadas de la caché..."
-          rm -rf .environment
+          # [ESTRATEGIA REPETICIÓN LIMPIA DE COMPILADOR]
+          # Forzamos la eliminación únicamente de la carpeta 'out' para obligar a GN y Ninja
+          # a reconstruir todo el árbol binario limpio desde cero, evitando arrastrar errores.
+          # Mantener '.environment' intacto nos ahorra minutos críticos de descargas de herramientas Python.
+          echo "INFRA: Purgando directorio out para iniciar compilación limpia..."
           rm -rf out
     
-          # activate.sh : Master environment initialization script. Boots up an isolated Python Virtual 
-          # Environment (venv) located under the .environment/pigweed-venv/ and initializes Pigweed
           echo "INFRA: activate.sh (Master environment initialization script): Initializes Pigweed"
-
           # 1. Inicializamos el entorno virtual de Pigweed
           source scripts/activate.sh
 
@@ -236,14 +186,18 @@ jobs:
 
           # =========================================================================
           # ¡EL CAMBIO MAESTRO! BORRAMOS -Werror DEL ARCHIVO FUENTE BUILD.gn
-          # Esto destruye el flag antes de que GN arme los planos de Ninja.
           # =========================================================================
           echo "INFRA: Aplicando parche de raíz sobre las plantillas de configuración GN..."
+          find . -name "BUILD.gn" -exec sed -i 's|"-Werror",||g' {} +
           find . -name "BUILD.gn" -exec sed -i 's|"-Werror"||g' {} +
+          
+          find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all",||g' {} +
           find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all"||g' {} +
+          
+          find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:deprecation",||g' {} +
           find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:deprecation"||g' {} +
 
-          # 3. Generamos el árbol físico de dependencias GN (Ahora sí, completamente limpio)
+          # 3. Generamos el árbol físico de dependencias GN totalmente virgen
           echo "INFRA: Generando árbol físico de dependencias en disco..."
           gn gen out/android-arm-tv-server \
             --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
@@ -254,20 +208,38 @@ jobs:
           find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 
           # =========================================================================
-          # 4. INVOCACIÓN MAESTRA A NINJA
-          # Como modificamos el archivo fuente BUILD.gn, Ninja ignorará los avisos
-          # de conversión redundante y completará la compilación de largo.
+          # 4. INVOCACIÓN MAESTRA A NINJA (Compilación pura desde cero)
           # =========================================================================
           echo "INFRA: Compilando paquetes de clases Java..."
           ninja -C out/android-arm-tv-server
 
       # =========================================================================
+      # [EL SALVAGUARDAS] GUARDA LA CACHÉ OBLIGATORIAMENTE AUNQUE EL BUILD FALLE
+      # =========================================================================
+      - name: Force Cache Save On Interrupted Runs
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.environment
+            ${{ github.workspace }}/out
+            ${{ github.workspace }}/third_party
+            ${{ github.workspace }}/examples
+            ${{ github.workspace }}/.git
+            ${{ github.workspace }}/build
+            ${{ github.workspace }}/src
+          key: ${{ runner.os }}-matter-global-core-v1
+
+      # =========================================================================
       # EXTRACCIÓN Y SUBIDA AUTOMÁTICA DE LOS ARCHIVOS JAR DE CLASES
       # =========================================================================
       - name: Upload Core SDK JAR Artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: matter-core-java-jars
           path: |
             out/android-arm-tv-server/lib/*.jar
             out/android-arm-tv-server/gen/third_party/**/*.jar
+
+
