@@ -1,87 +1,77 @@
-name: Build Matter TVApp (Docker Surgical Way)
-# Entorno estándar sellado en contenedor oficial de Project CHIP sin cachés inestables
+name: Build Matter TVApp (Docker Multi-Job Way)
+# La arquitectura estándar para congelar descargas y liberar el Re-run dinámico
 
 on:
-  workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
+  workflow_dispatch: # Permite iniciar la compilación manualmente desde la interfaz web
 
 jobs:
-  build-tv-docker:
+  # =========================================================================
+  # JOB 1: DESCARGA ULTRA-PESADA DE SUBMÓDULOS (Ocurre una sola vez)
+  # =========================================================================
+  prepare-source-tree:
     runs-on: ubuntu-latest
+    steps:
+      - name: Cache Source Check
+        uses: actions/cache@v4
+        id: source-cache
+        with:
+          path: matter-sdk
+          key: matter-source-base-v1
+
+      - name: Emergency Upstream SDK Checkout
+        if: steps.source-cache.outputs.cache-hit != 'true'
+        run: |
+          PATH_project="/project-chip/connectedhomeip.git"
+          URL_github="https://github.com${PATH_project}"
+          echo "INFRA: Descargando el árbol completo de Matter por primera vez..."
+          git clone --depth 1 --branch v1.3-branch "${URL_github}" matter-sdk
+          cd matter-sdk
+          git submodule update --init --recursive --depth 1
+
+  # =========================================================================
+  # JOB 2: COMPILACIÓN DINÁMICA (Si falla, el Re-run solo repite ESTE bloque)
+  # =========================================================================
+  compile-core-jars:
+    runs-on: ubuntu-latest
+    needs: prepare-source-tree # Espera obligatoriamente a que el Job 1 termine en verde
     
-    # Todo se ejecuta dentro del búnker de Docker oficial de Matter
+    # Forzamos a este trabajo específico a vivir dentro del contenedor oficial
     container:
       image: ghcr.io/project-chip/chip-build-android:126
 
     steps:
-      # =========================================================================
-      # 1. CLONADO DIRECTO DENTRO DE DOCKER (Limpio y sin burocracia de caché)
-      # =========================================================================
-      - name: Checkout Code with Submodules
+      # 1. Trae tu repositorio propio de GitHub con tu script compilar_core.sh actualizado
+      - name: Checkout Local Repository (PubIrZ/MatterTVApp)
         uses: actions/checkout@v4
+
+      # 2. Descarga el código base de Matter generado por el Job 1 en 3 segundos
+      - name: Restore Source Tree from Job 1
+        uses: actions/cache@v4
         with:
-          repository: 'project-chip/connectedhomeip'
-          ref: 'v1.3-branch' # Tu rama estable compatible con Alexa y Android TV
-          submodules: 'recursive' # Obligatorio para el núcleo de C++ de Matter
+          path: matter-sdk
+          key: matter-source-base-v1
 
-      # =========================================================================
-      # 2. PARCHES DE INHIBICIÓN Y COMPILACIÓN QUIRÚRGICA
-      # =========================================================================
+      # 3. Inyección y ejecución de tu script dinámico de parches dentro de Docker
       - name: Run Clean Generation and Compile Core JARs
-        shell: bash # Forzamos el shell de Bash para que reconozca el comando 'source' internamente
+        shell: bash # Obligatorio para activar 'source scripts/activate.sh' dentro del contenedor
         run: |
-          # [SOLUCIÓN CRÍTICA DE PROPIEDAD] 
-          # Engañamos a las restricciones de seguridad de Git registrando la ruta de Docker como segura
-          echo "INFRA: Configurando excepciones de directorio seguro en Git..."
-          git config --global --add safe.directory /__w/MatterTVApp/MatterTVApp
-
-          # 1. Activamos las herramientas de Pigweed pre-instaladas en el contenedor
-          source scripts/activate.sh
-
-          # 2. Descargamos las dependencias base lógicas de Google Maven
-          python3 third_party/android_deps/set_up_android_deps.py
-          third_party/java_deps/set_up_java_deps.sh
-
-          # =========================================================================
-          # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS
-          # Modificamos los archivos fuentes antes de que GN lea las plantillas (.gn y .gni)
-          # =========================================================================
-          echo "INFRA: Removiendo flags estrictos de las plantillas fuentes BUILD.gn y .gni..."
-          find . -name "BUILD.gn" -exec sed -i 's|"-Werror",||g' {} +
-          find . -name "BUILD.gn" -exec sed -i 's|"-Werror"||g' {} +
-          find . -name "*.gni" -exec sed -i 's|"-Werror",||g' {} +
-          find . -name "*.gni" -exec sed -i 's|"-Werror"||g' {} +
+          # Evitamos las restricciones de seguridad de Git del contenedor de raíz
+          git config --global --add safe.directory /__w/MatterTVApp/MatterTVApp/matter-sdk
           
-          find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all",||g' {} +
-          find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all"||g' {} +
-          find . -name "*.gni" -exec sed -i 's|"-Xlint:all",||g' {} +
-          find . -name "*.gni" -exec sed -i 's|"-Xlint:all"||g' {} +
+          echo "INFRA: Moviendo tu script de control compilar_core.sh dentro del SDK..."
+          cp compilar_core.sh matter-sdk/
+          cd matter-sdk
+          chmod +x compilar_core.sh
+          
+          echo "INFRA: Delegando el control total a tu script dinámico..."
+          ./compilar_core.sh
 
-          # 3. Forzamos la desactivación de alertas estéticas en el compilador de Kotlin (Kotlinc)
-          # Inyectamos '-nowarn' al final del arreglo de Python de forma segura sin alterar la cabecera ejecutable
-          export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
-          export KOTLINC_ARGS="-nowarn"
-          find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
-          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
-
-          # 4. Generamos el árbol limpio directo en el búnker
-          gn gen out/android-arm-tv-server \
-            --args='target_os="android" target_cpu="arm" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
-            --root=examples/tv-app/android/
-
-          # Parche secundario de seguridad sobre metadatos JSON
-          find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
-
-          # 5. Invocamos al motor de Ninja para compilar tus clases lógicas de TV
-          ninja -C out/android-arm-tv-server
-
-      # =========================================================================
-      # 3. EXTRACCIÓN AUTOMÁTICA DE LOS RECURSOS GENERADOS EN EL CONTENEDOR
-      # =========================================================================
+      # 4. Extracción automática de tus librerías .jar listas para Windows
       - name: Upload Core SDK JAR Artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: matter-core-java-jars-docker
           path: |
-            out/android-arm-tv-server/lib/*.jar
-            out/android-arm-tv-server/gen/third_party/**/*.jar
+            matter-sdk/out/android-arm-tv-server/lib/*.jar
+            matter-sdk/out/android-arm-tv-server/gen/third_party/**/*.jar
