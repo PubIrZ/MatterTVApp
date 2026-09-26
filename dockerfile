@@ -5,7 +5,7 @@ USER root
 WORKDIR /workspace
 
 # 2. Descargamos el código fuente completo con submódulos de forma permanente dentro de la imagen
-RUN git clone --depth 1 --branch v1.3-branch https://github.com . \
+RUN git clone --depth 1 --branch v1.3-branch "https://github.com/project-chip/connectedhomeip.git" . \
     && git submodule update --init --recursive --depth 1
 
 # 3. Configuramos la excepción de Git global de forma interna para que nunca más falle por permisos
