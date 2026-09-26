@@ -41,7 +41,7 @@ TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
 mkdir -p "$TARGET_PLATFORM_DIR"
 
 PATH_platform26="/android/repository/platform-26_r02.zip"
-URL_google="https://dl.google.com${PATH_platform26}"
+URL_google="https://google.com${PATH_platform26}"
 
 echo "INFRA: Conectando de forma directa al servidor de descargas: ${URL_google}"
 curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
@@ -68,41 +68,41 @@ python3 third_party/android_deps/set_up_android_deps.py
 third_party/java_deps/set_up_java_deps.sh
 
 # =========================================================================
-# TRUCO MAESTRO 2 PARCHADO EXTRA-ESTRICTO (LIBC++ LAYOUT ENGANCHE)
-# Recreamos a la fuerza la ruta vieja solicitada por Ninja dentro de /cxx-stl/
-# y apuntamos el puntero al archivo real que vive dentro de /toolchains/
+# TRUCO MAESTRO 2 DEF_INITIVO: CLONADO Y REDIRECCIÓN ESTRUCTURAL DE LIBC++
+# Recuperamos tus rutas exitosas verificadas, inyectamos los archivos en sysroot
+# y armamos los enlaces simbólicos tradicionales que Ninja exige.
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
-if [ -n "$ANDROID_NDK" ]; then
-    NDK_PATH="$ANDROID_NDK"
-elif [ -n "$ANDROID_NDK_ROOT" ]; then
-    NDK_PATH="$ANDROID_NDK_ROOT"
-else
-    NDK_PATH="/opt/android/android-ndk-r25c"
-fi
-
-echo "INFRA: Sincronizando rutas de variables NDK absolutas: $NDK_PATH"
+NDK_PATH="/opt/android/android-ndk-r25c"
+echo "INFRA: Forzando ruta NDK estandarizada: $NDK_PATH"
 export ANDROID_NDK_ROOT="$NDK_PATH"
 export ANDROID_NDK_HOME="$NDK_PATH"
 
-# 1. Recreamos la ruta física exacta que Ninja está exigiendo en tu log de error
+# 1. Definimos las rutas de origen reales descubiertas por tu test exitoso anterior
+VERIFIED_SRC_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/14.0.7/lib/linux/arm/libc++_shared.so"
+VERIFIED_SRC_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/lib/clang/14.0.7/lib/linux/aarch64/libc++_shared.so"
+
+# 2. Definimos las rutas de sysroot donde Ninja y GN esperan que el archivo exista nativamente
+SYSROOT_DIR_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi"
+SYSROOT_DIR_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android"
+mkdir -p "$SYSROOT_DIR_32"
+mkdir -p "$SYSROOT_DIR_64"
+
+# Copiamos físicamente los archivos dentro de sysroot para simular la arquitectura vieja
+echo "INFRA: Inyectando copias físicas dentro de las carpetas sysroot..."
+cp -f "$VERIFIED_SRC_32" "$SYSROOT_DIR_32/libc++_shared.so"
+cp -f "$VERIFIED_SRC_64" "$SYSROOT_DIR_64/libc++_shared.so"
+
+# 3. Creamos las carpetas de fuentes requeridas por la envoltura de Ninja
 TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
 TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
 mkdir -p "$TARGET_STL_DIR_32"
 mkdir -p "$TARGET_STL_DIR_64"
 
-# 2. Apuntamos a los archivos binarios reales que viven dentro de la carpeta /toolchains/ de la imagen de Docker
-REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
-REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
-
-echo "INFRA: Forzando enlace simbólico desde toolchains hacia la ruta esperada de fuentes..."
-echo "De: $REAL_SO_32"
-echo "Hacia: $TARGET_STL_DIR_32/libc++_shared.so"
-
-# Enlazamos de forma atómica sobreescribiendo cualquier rastro viejo
-ln -sf "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
-ln -sf "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
-echo "SUCCESS: ¡Puente físico de redirección completado con total éxito!"
+# Creamos los enlaces simbólicos tradicionales apuntando al sysroot poblado
+ln -sf "$SYSROOT_DIR_32/libc++_shared.so" "$TARGET_STL_DIR_32/libc++_shared.so"
+ln -sf "$SYSROOT_DIR_64/libc++_shared.so" "$TARGET_STL_DIR_64/libc++_shared.so"
+echo "SUCCESS: ¡Estructura dual de libc++ sincronizada e inyectada perfectamente!"
 
 # =========================================================================
 # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS (.gn y .gni)
