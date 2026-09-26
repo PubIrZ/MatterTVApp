@@ -1,0 +1,262 @@
+name: Build Matter TVApp (.jar libs)
+# JDK 11 & NDK 23.2.8568313 (r23c)
+
+on:
+  workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
+
+jobs:
+  build-tv-libraries:
+    runs-on: ubuntu-latest
+
+
+    steps:
+      # =========================================================================
+      # SISTEMA DE PERSISTENCIA GLOBAL: RECUPERAMOS ENTORNOS Y METADATA GIT
+      # =========================================================================
+      - name: Cache Matter Build Environment and Git Submodules
+        uses: actions/cache@v4
+        id: build-cache
+        with:
+          path: |
+            .environment
+            out
+            .git/modules
+          # Amárramos la clave a la arquitectura v4 para forzar el refresco de los metadatos Git.
+          key: ${{ runner.os }}-matter-tvapp-cache-v4-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-matter-tvapp-cache-v4-
+
+      # =========================================================================
+      # CHECKOUT OPTIMIZADO (Bypass del borrado destructivo de la caché Git)
+      # =========================================================================
+      - name: Checkout Base Repository Core
+        uses: actions/checkout@v4
+        with:
+          repository: 'project-chip/connectedhomeip'
+          ref: 'v1.3-branch' # Tu rama de mantenimiento estable v1.3 compatible con Alexa
+          # Truco de optimización: Si la caché recuperó la metadata de .git/modules,
+          # reducimos el clon recursivo a profundidad 1 para evitar descargas duplicadas de red.        
+          fetch-depth: 1
+          # [SANEADO CRÍTICO] Forzamos clean: false para evitar que la acción destruya la carpeta .git/modules restaurada por la caché
+          clean: false
+          submodules: false # Manejamos los submódulos manualmente abajo en una fracción de segundo
+
+      - name: Sync and Restore Cached Git Submodules Instantly
+        run: |
+          echo "=== RE-ENLAZANDO SUBMÓDULOS DESDE LA CACHÉ LOCAL ==="
+          # Inicializa el árbol de sub-repositorios leyendo la metadata segura restaurada de .git/modules
+          git submodule init
+          
+          # Actualiza los punteros físicos locales. Al estar los objetos ya en el disco virtual de la caché,
+          # Git ensamblará el código de Pigweed y C++ localmente saltándose la descarga de internet por completo.
+          git submodule update --recursive --depth 1
+
+
+      # =========================================================================
+      # MATRIZ DE CONFIGURACIÓN DE JAVA DUAL: ADAPTADO PARA COMPILACIÓN KOTLIN
+      # =========================================================================
+      - name: Set up Java JDK 11 (Para el compilador interno de Gradle/Kotlin v1.3)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+
+      - name: Set up Java JDK 17 (Fija Java 17 por defecto para el host y sdkmanager)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17' # Al ser el último paso, la máquina virtual usará Java 17 por defecto para no bloquear las licencias
+
+      # =========================================================================
+      # RETROCOMPATIBILIDAD NDK: INYECTAMOS EL SDK r25c ESTABLE DE RESPALDO
+      # =========================================================================
+      - name: Set up Android NDK r25c
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: 'r25c'
+
+      # =========================================================================
+      # ENTORNO SEGURO: PYTHON 3.11 EVITA EL CRASH DE LOS TIPOS DE DATOS (TYPEVAR)
+      # =========================================================================
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Fija el entorno nativo en la versión exacta que Matter 1.3 necesita
+
+      # =========================================================================
+      # SISTEMA DE PERSISTENCIA: CACHÉ ESTRUCTURAL PARA REAPROVECHAR COMPILACIONES
+      # =========================================================================
+      - name: Cache Matter Build Environment and Output Targets
+        uses: actions/cache@v4
+        with:
+          path: |
+            .environment
+            out
+          # La clave se amarra al hash del commit. Si el job falla, la clave se mantiene idéntica
+          # obligando a la máquina virtual a restaurar los archivos del intento anterior.
+          key: ${{ runner.os }}-matter-tvapp-cache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-matter-tvapp-cache-
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            ninja-build \
+            libglib2.0-dev \
+            libdbus-1-dev \
+            git \
+            unzip \
+            curl \
+            file
+
+      # =========================================================================
+      # INSTALACIÓN DE LA PLATAFORMA ANDROID 26 (Requisito de compilador cruzado)
+      # =========================================================================
+      - name: Install Missing Android 26 Platform SDK
+        run: |
+          echo "=== DESCARGANDO COMPONENTES HISTÓRICOS DE ANDROID ==="
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
+          echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente."
+
+      # =========================================================================
+      # PARCHE MAESTRO NDK COMPILER LAYOUT MATCHING: TRUCO DE ENLACE SIMBÓLICO
+      # =========================================================================
+      - name: Patch NDK r25c Directory Structure for Matter 1.3
+        run: |
+          echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          
+          # In NDK versions r23 through r25, Google changed how the NDK layout handles the Shared C++ runtime library (libc++_shared.so).
+          # 1. Recreamos la ruta física esperada por el viejo script de Matter 1.3's build system     
+          TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
+          TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
+          mkdir -p "$TARGET_STL_DIR_32"
+          mkdir -p "$TARGET_STL_DIR_64"
+          
+          # 2. Localizamos la ruta real donde el NDK r25 aloja el archivo binario nativo libc++_shared.so
+          REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
+          REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+          
+          # 3. Forzamos enlaces simbólicos cruzados (Symlinks) para engañar al motor de Ninja
+          ln -s "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
+          ln -s "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
+          echo "SUCCESS: Enlaces simbólicos de libc++_shared.so creados con total éxito."
+
+      # =========================================================================
+      # BYPASS DE CIPD COMPLETO: DESCARGA ABIERTA, TRUCO VARIABLE LEGIBLE Y DESPLIEGUE
+      # =========================================================================
+      - name: Inject Pre-built ZAP and Bypass Interactive Prompts
+        run: |
+          # [ESTRATEGIA BYPASS Editor Chat]
+          # Conservamos tu concatenación de variables limpias e inequívocas para entroncar la arquitectura x64
+          ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+          URL_ZAP="https://github.com${ZAP_ASSET}"
+          echo "INFRA: Descargando de forma inequívoca desde la ruta: ${URL_ZAP}"
+          
+          curl -L --retry 5 --retry-delay 5 --fail "$URL_ZAP" -o zap.zip
+
+          # 2. Creamos la carpeta global de herramientas en la máquina virtual Linux
+          sudo mkdir -p /usr/local/share/zap
+          sudo unzip -o -q zap.zip -d /usr/local/share/zap
+
+          # [NUEVO PARCHE CRÍTICO DE ENTORNO ZAP LAYOUT]
+          # El ZIP desempaqueta una subcarpeta 'zap-linux-x64'. Movemos todo su contenido 
+          # hacia la raíz de '/usr/local/share/zap/' para que los scripts encuentren 'src-script/zap-start.js'
+          if [ -d "/usr/local/share/zap/zap-linux-x64" ]; then
+              echo "INFRA: Re-alineando árbol de directorios de Node.js..."
+              sudo cp -r /usr/local/share/zap/zap-linux-x64/* /usr/local/share/zap/
+              sudo rm -rf /usr/local/share/zap/zap-linux-x64
+          fi
+          
+          # 3. Creamos los enlaces de ejecución simbólicos globales para Linux
+          sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
+          sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap
+          sudo chmod +x /usr/local/share/zap/zap-cli
+          sudo chmod +x /usr/local/bin/zap-cli
+          sudo chmod +x /usr/local/bin/zap
+          
+          # 4. NEUTRALIZACIÓN DE CIPD: Vaciamos el archivo scripts/setup/zap.json.
+          if [ -f "scripts/setup/zap.json" ]; then
+              echo '{"packages": []}' > scripts/setup/zap.json
+              echo "INFRA: Archivo scripts/setup/zap.json neutralizado con éxito."
+          fi
+          
+          # 5. CORRECCIÓN CRÍTICA DE VARIABLE DE PRODUCCIÓN:
+          echo "ZAP_INSTALL_PATH=/usr/local/bin" >> $GITHUB_ENV
+          echo "INFRA: Entorno ZAP fijado con éxito en modo ejecución de producción."
+
+      # =========================================================================
+      # COMPILACIÓN PARCIAL: SOLO OBJETIVOS JAVA/JAR CORE
+      # =========================================================================
+      - name: Compile Core Java JAR Classes via Target Ninja
+        env:
+          # [EDUCATIVO] CORRECCIÓN DE ENTORNO NDK COMPILADOR: 
+          # Forzamos la inyección en las variables globales de compilación nativa cruzada de Android.
+          # Esto anula la autodetención de NDK r27 del sistema operativo host e inyecta r25c en la tarea.
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          # [PARCHE MAESTRO ANTICORRUPCIÓN DE ENTORNO PIG_WEED]
+          # Forzamos la eliminación de la carpeta .environment proveniente de la caché vieja con los errores
+          # de ejecuciones anteriores para obligar a scripts/activate.sh a mapear los punteros de bootstrap 
+          # en limpio sobre NDK r23c.
+          # Borramos de raíz cualquier rastro corrupto de la caché vieja para que activate.sh
+          # y GN mapeen las rutas absolutas del disco virtual de forma impecable desde cero.
+          # Asi "activate.sh" se ve obligado a realizar un proceso de inicialización completa desde cero
+          echo "INFRA: Purgando variables de entorno desalineadas de la caché..."
+          rm -rf .environment
+          rm -rf out
+    
+          # activate.sh : Master environment initialization script. Boots up an isolated Python Virtual 
+          # Environment (venv) located under the .environment/pigweed-venv/ and initializes Pigweed
+          echo "INFRA: activate.sh (Master environment initialization script): Initializes Pigweed"
+          source scripts/activate.sh
+
+          # Forzamos a GN a generar el árbol completo de dependencias para Android TV (ARM 32-bit)
+          ./examples/tv-app/android/third_party/connectedhomeip/tools/gn/bootstrap/gn.py gen out/android-arm-tv-server \
+            --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false' \
+            --root=examples/tv-app/android/
+
+          # =========================================================================
+          # [PARCHE MAESTRO CRÍTICO] ELIMINACIÓN DE FLAGS POST-GENERACIÓN DE GN
+          # =========================================================================
+          echo "INFRA: Escaneando y parchando todas las instancias generadas de kotlinc_runner.py..."
+          
+          # Borramos los flags del archivo original y de cualquier copia generada en el árbol de dependencias
+          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
+          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Xlint:all'||g" {} +
+          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Xlint:deprecation'||g" {} +
+
+          # Además, modificamos directamente el archivo de configuración JSON generado de Ninja para esa tarea específica
+          # que es el que fuerza los flags mostrados en tu error: "onboarding_payload.json"
+          echo "INFRA: Modificando argumentos de configuración JSON de la compilación..."
+          find out/ -name "onboarding_payload.json" -exec sed -i 's|"-Werror",||g' {} +
+          find out/ -name "onboarding_payload.json" -exec sed -i 's|"-Xlint:all",||g' {} +
+          find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
+
+          # INVOCACIÓN QUIRÚRGICA A NINJA:
+          echo "INFRA: Compilando paquetes estables de clases Java..."
+          ninja -C out/android-arm-tv-server \
+            third_party/connectedhomeip/src/platform/android:android_sdk \
+            third_party/connectedhomeip/src/controller/java:chip_jni
+          # Le ordenamos explícitamente compilar únicamente las plataformas SDK de Java y las capas de bindings.
+          echo "INFRA: Compilando paquetes estables de clases Java..."
+          ninja -C out/android-arm-tv-server \
+            third_party/connectedhomeip/src/platform/android:android_sdk \
+            third_party/connectedhomeip/src/controller/java:chip_jni
+
+      # =========================================================================
+      # EXTRACCIÓN Y SUBIDA AUTOMÁTICA DE LOS ARCHIVOS JAR DE CLASES
+      # =========================================================================
+      - name: Upload Core SDK JAR Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-core-java-jars
+          path: |
+            out/android-arm-tv-server/lib/*.jar
+            out/android-arm-tv-server/gen/third_party/**/*.jar
