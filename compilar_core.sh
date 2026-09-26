@@ -29,28 +29,23 @@ echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
 # =========================================================================
-# ¡LA SOLUCIÓN QUIRÚRGICA MAESTRA CONTRA ERRORES DE SUB_CARPETA EN UNZIP!
-# Descargamos el ZIP original completo y realizamos una extracción total.
-# Luego localizamos dinámicamente android.jar e inyectamos el API 26.
+# TRUCO MAESTRO 1: RE-INYECTAMOS TU ANDROID.JAR (API 26) EM_PARETADA
 # =========================================================================
 echo "INFRA: Descargando el archivo original android.jar (API 26) usando variables seguras..."
 TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
 mkdir -p "$TARGET_PLATFORM_DIR"
 
-# Concatenamos de forma inequívoca el endpoint estático de Google Android [3]
 PATH_platform26="/android/repository/platform-26_r02.zip"
-URL_google="https://dl.google.com${PATH_platform26}"
+URL_google="https://google.com${PATH_platform26}"
 
 echo "INFRA: Conectando de forma directa al servidor: ${URL_google}"
 curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
 
 echo "INFRA: Extrayendo la plataforma completa de forma temporal..."
-# Creamos una carpeta temporal limpia para evitar colisiones
 mkdir -p temp_extracted
 unzip -o -q platform26.zip -d temp_extracted/
 
 echo "INFRA: Buscando físicamente el archivo android.jar extraído..."
-# Localizamos de forma inteligente el archivo jar sin importar el nombre de la subcarpeta interna [3]
 REAL_JAR_PATH=$(find temp_extracted/ -name "android.jar" -type f -print -quit 2>/dev/null)
 
 if [ -n "$REAL_JAR_PATH" ]; then
@@ -58,16 +53,34 @@ if [ -n "$REAL_JAR_PATH" ]; then
     mv "$REAL_JAR_PATH" "$TARGET_PLATFORM_DIR/android.jar"
     echo "SUCCESS: Archivo maestro android.jar (API 26) firmado e inyectado con total éxito."
 else
-    echo "CRITICAL ERROR: No se encontró android.jar dentro del paquete descargado."
+    echo "CRITICAL ERROR: No se encontró android.jar."
     exit 1
 fi
-
-# Limpieza estricta de residuos de almacenamiento en el búnker virtual
 rm -rf temp_extracted platform26.zip
 
 echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
 python3 third_party/android_deps/set_up_android_deps.py
 third_party/java_deps/set_up_java_deps.sh
+
+# =========================================================================
+# TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++)
+# Usamos las variables lógicas del contenedor ($ANDROID_NDK_ROOT) de forma dinámica
+# =========================================================================
+echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
+NDK_PATH="$ANDROID_NDK_ROOT"
+echo "INFRA: Detectada ruta NDK del sistema: $NDK_PATH"
+
+TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
+TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
+mkdir -p "$TARGET_STL_DIR_32"
+mkdir -p "$TARGET_STL_DIR_64"
+
+REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
+REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+
+ln -sf "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
+ln -sf "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
+echo "SUCCESS: Enlaces simbólicos de libc++_shared.so creados con total éxito."
 
 # =========================================================================
 # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS (.gn y .gni)
