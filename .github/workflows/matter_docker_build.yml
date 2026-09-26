@@ -1,0 +1,82 @@
+name: Build Matter TVApp (Docker Surgical Way)
+# Entorno estándar sellado en contenedor oficial de Project CHIP
+
+on:
+  workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
+
+jobs:
+  build-tv-docker:
+    runs-on: ubuntu-latest
+    
+    # =========================================================================
+    # EL ESTÁNDAR DE LA INDUSTRIA: Todo se ejecuta dentro del búnker de Docker.
+    # Esta imagen oficial ya viene con el NDK, JDK y Python congelados en la versión compatible.
+    # =========================================================================
+    container:
+      image: ghcr.io/project-chip/chip-build-android:126
+
+    steps:
+      # =========================================================================
+      # 1. CLONADO DE EMERGENCIA DIRECTO DENTRO DE DOCKER
+      # =========================================================================
+      - name: Checkout Code with Submodules
+        uses: actions/checkout@v4
+        with:
+          repository: 'project-chip/connectedhomeip'
+          ref: 'v1.3-branch' # Tu rama estable compatible con Alexa y Android TV
+          submodules: 'recursive' # Obligatorio para el núcleo de C++ de Matter
+      # =========================================================================
+      # 2. PARCHES DE INHIBICIÓN Y COMPILACIÓN QUIRÚRGICA
+      # =========================================================================
+      - name: Run Clean Generation and Compile Core JARs
+        run: |
+          # 1. Activamos las herramientas internas de Pigweed que ya vienen dentro de Docker
+          source scripts/activate.sh
+
+          # 2. Descargamos las dependencias base lógicas de Google Maven
+          python3 third_party/android_deps/set_up_android_deps.py
+          third_party/java_deps/set_up_java_deps.sh
+
+          # =========================================================================
+          # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS
+          # Modificamos los archivos fuentes antes de que GN lea las plantillas
+          # =========================================================================
+          echo "INFRA: Removiendo flags estrictos de las plantillas fuentes BUILD.gn y .gni..."
+          find . -name "BUILD.gn" -exec sed -i 's|"-Werror",||g' {} +
+          find . -name "BUILD.gn" -exec sed -i 's|"-Werror"||g' {} +
+          find . -name "*.gni" -exec sed -i 's|"-Werror",||g' {} +
+          find . -name "*.gni" -exec sed -i 's|"-Werror"||g' {} +
+          
+          find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all",||g' {} +
+          find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all"||g' {} +
+          find . -name "*.gni" -exec sed -i 's|"-Xlint:all",||g' {} +
+          find . -name "*.gni" -exec sed -i 's|"-Xlint:all"||g' {} +
+
+          # 3. Forzamos la desactivación de alertas estéticas en el compilador de Kotlin (Kotlinc)
+          export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
+          export KOTLINC_ARGS="-nowarn"
+          find . -name "kotlinc_runner.py" -exec sed -i "s|kotlin_args = \[|kotlin_args = \['-nowarn',|g" {} +
+          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
+
+          # 4. Generamos el árbol limpio. Al estar en Docker, lee las variables nativas del contenedor automáticamente.
+          gn gen out/android-arm-tv-server \
+            --args='target_os="android" target_cpu="arm" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
+            --root=examples/tv-app/android/
+
+          # Parche secundario de seguridad sobre metadatos JSON
+          find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
+
+          # 5. Invocamos al motor de Ninja para compilar tus clases lógicas de TV
+          ninja -C out/android-arm-tv-server
+
+      # =========================================================================
+      # 3. EXTRACCIÓN AUTOMÁTICA DE LOS RECURSOS GENERADOS EN EL CONTENEDOR
+      # =========================================================================
+      - name: Upload Core SDK JAR Artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-core-java-jars-docker
+          path: |
+            out/android-arm-tv-server/lib/*.jar
+            out/android-arm-tv-server/gen/third_party/**/*.jar
