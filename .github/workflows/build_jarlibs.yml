@@ -10,49 +10,57 @@ jobs:
 
     steps:
       # =========================================================================
-      # 1. PERSISTENCIA TOTAL: Descargamos todo el código y el build anterior
+      # 1. PERSISTENCIA ABSOLUTA DE ENTORNO: SALTA LA DESCARGA DE SUB-MÓDULOS
       # =========================================================================
-      - name: Restore Complete Environment and Working Tree from Cache
+      - name: Cache Matter Full Source Code and Native Toolchains
         uses: actions/cache@v4
         id: build-cache
         with:
           path: |
-            .environment
-            out
-            .git
-            examples
-            third_party
-            src
-            build
-            scripts
-          # Al usar una clave base y restore-keys dinámicas, GitHub Actions
-          # siempre te entregará el último estado guardado (incluso de un build que falló)
-          key: ${{ runner.os }}-matter-fast-compile-${{ github.run_id }}
+            ${{ github.workspace }}/.environment
+            ${{ github.workspace }}/out
+            ${{ github.workspace }}/third_party
+            ${{ github.workspace }}/examples
+            ${{ github.workspace }}/.git
+          # Usamos una clave combinada con el ID de ejecución y restore-keys estáticas
+          key: ${{ runner.os }}-matter-ultra-fast-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-matter-fast-compile-
+            ${{ runner.os }}-matter-ultra-fast-    
+            
+      # =========================================================================
+      # 2. CHECKOUT INTELIGENTE: No destructivo si venimos de un re-intento
+      # =========================================================================
+      - name: Smart Checkout and Submodules
+        # Solo clonamos de forma recursiva pesada si la carpeta de sub-módulos está literalmente vacía
+        # Esto es un bypass infalible a los fallos de lógicas de las claves de GitHub.
+        run: |
+          if [ -d "${{ github.workspace }}/third_party/mbedtls/repo" ] && [ "$(ls -A ${{ github.workspace }}/third_party/mbedtls/repo 2>/dev/null)" ]; then
+            echo "CACHE_FOUND=true" >> $GITHUB_ENV
+            echo "INFRA: Submódulos detectados en disco local virtual. Saltando clonación de red."
+          else
+            echo "CACHE_FOUND=false" >> $GITHUB_ENV
+            echo "INFRA: Carpeta de submódulos vacía o ausente. Iniciando descarga de emergencia..."
+          fi
 
-      # =========================================================================
-      # 2. CHECKOUT DE EMERGENCIA: Solo se ejecuta si la caché global está vacía
-      # =========================================================================
-      - name: Emergency Checkout and Submodules (Only if Cache is Missing)
-        if: steps.build-cache.outputs.cache-hit != 'true'
+      - name: Emergency Checkout (Only if Disk is Empty)
+        # Si se detectó la caché en el paso anterior, este bloque pasa a estado "SKIPPED" en 0 segundos
+        if: env.CACHE_FOUND == 'false'
         uses: actions/checkout@v4
         with:
           repository: 'project-chip/connectedhomeip'
           ref: 'v1.3-branch'
           fetch-depth: 1
-          submodules: true # En el primer intento descarga todo; en los siguientes se lo salta
+          clean: false # [CRÍTICO] Evita que GitHub borre lo que haya descargado la caché
+          submodules: true
 
       - name: Verify Environment Status
         run: |
           echo "=== CONTROL DE FLUJO DE TRABAJO ==="
-          if [ "${{ steps.build-cache.outputs.cache-hit }}" = "true" ]; then
-            echo "SUCCESS: El entorno completo fue restaurado desde la caché. Saltando descargas de red."
+          if [ "${{ env.CACHE_FOUND }}" = "true" ]; then
+            echo "SUCCESS: El entorno completo fue restaurado desde la caché. Descargas de red omitidas."
           else
-            echo "WARNING: No se encontró caché previa. Ejecutando clonado inicial completo."
+            echo "WARNING: No se encontró caché previa en el disco. Ejecutando clonado inicial completo."
           fi
-
-
 
       # =========================================================================
       # MATRIZ DE CONFIGURACIÓN DE JAVA DUAL: ADAPTADO PARA COMPILACIÓN KOTLIN
