@@ -1,4 +1,4 @@
-name: Build Matter TVApp (.jar libs)
+name: Build Matter TVApp (only .jar's for .so libs)
 # JDK 11 & NDK 23.2.8568313 (r23c)
 
 on:
