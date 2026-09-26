@@ -29,27 +29,41 @@ echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
 # =========================================================================
-# ¡LA SOLUCIÓN QUIRÚRGICA CONCATENADA PARA EL SDK DE ANDROID!
-# Usamos tu truco maestro de concatenación para proteger la ruta de internet.
+# ¡LA SOLUCIÓN QUIRÚRGICA MAESTRA CONTRA ERRORES DE SUB_CARPETA EN UNZIP!
+# Descargamos el ZIP original completo y realizamos una extracción total.
+# Luego localizamos dinámicamente android.jar e inyectamos el API 26.
 # =========================================================================
 echo "INFRA: Descargando el archivo original android.jar (API 26) usando variables seguras..."
 TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
 mkdir -p "$TARGET_PLATFORM_DIR"
 
-# Concatenamos de forma inequívoca el endpoint estático de Google Android
+# Concatenamos de forma inequívoca el endpoint estático de Google Android [3]
 PATH_platform26="/android/repository/platform-26_r02.zip"
 URL_google="https://dl.google.com${PATH_platform26}"
 
 echo "INFRA: Conectando de forma directa al servidor: ${URL_google}"
 curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
 
-# Desempaquetamos el archivo binario real y extraemos de forma exclusiva el jar requerido
-unzip -o -q platform26.zip "android-26/android.jar"
-mv android-26/android.jar "$TARGET_PLATFORM_DIR/android.jar"
+echo "INFRA: Extrayendo la plataforma completa de forma temporal..."
+# Creamos una carpeta temporal limpia para evitar colisiones
+mkdir -p temp_extracted
+unzip -o -q platform26.zip -d temp_extracted/
+
+echo "INFRA: Buscando físicamente el archivo android.jar extraído..."
+# Localizamos de forma inteligente el archivo jar sin importar el nombre de la subcarpeta interna [3]
+REAL_JAR_PATH=$(find temp_extracted/ -name "android.jar" -type f -print -quit 2>/dev/null)
+
+if [ -n "$REAL_JAR_PATH" ]; then
+    echo "INFRA: Encontrado archivo original en: $REAL_JAR_PATH"
+    mv "$REAL_JAR_PATH" "$TARGET_PLATFORM_DIR/android.jar"
+    echo "SUCCESS: Archivo maestro android.jar (API 26) firmado e inyectado con total éxito."
+else
+    echo "CRITICAL ERROR: No se encontró android.jar dentro del paquete descargado."
+    exit 1
+fi
 
 # Limpieza estricta de residuos de almacenamiento en el búnker virtual
-rm -rf android-26 platform26.zip
-echo "SUCCESS: Archivo maestro android.jar (API 26) firmado e inyectado con total éxito en la ruta esperada."
+rm -rf temp_extracted platform26.zip
 
 echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
 python3 third_party/android_deps/set_up_android_deps.py
