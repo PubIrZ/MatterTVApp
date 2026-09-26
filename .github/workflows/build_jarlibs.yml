@@ -45,6 +45,17 @@ jobs:
       - name: Emergency Upstream SDK Checkout
         if: env.SKIP_SETUP == 'false'
         run: |
+
+          mkdir matter-sdk
+          cp compilar_core_build_jarlibs.sh matter-sdk/
+          cd matter-sdk
+          
+          echo "INFRA: Otorgando permisos de ejecución al script espejo..."
+          chmod +x compilar_core_build_jarlibs.sh
+          
+          echo "INFRA: Lanzando proceso de compilación..."
+          ./compilar_core_build_jarlibs.sh
+          
           PATH_project="/project-chip/connectedhomeip.git"
           URL_github="https://github.com${PATH_project}"
           echo "INFRA: Descargando de forma inequívoca el SDK desde la ruta: ${URL_github}"
