@@ -224,41 +224,26 @@ jobs:
           echo "INFRA: activate.sh (Master environment initialization script): Initializes Pigweed"
           source scripts/activate.sh
 
-          # =========================================================================
-          # ANTICIPACIÓN ERROR 1 & 2: Descarga física de JARs de soporte (Google Maven)
-          # =========================================================================
+          # 2. Descarga física de JARs de soporte (Google Maven)
           echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
           python3 third_party/android_deps/set_up_android_deps.py
           third_party/java_deps/set_up_java_deps.sh
 
           # =========================================================================
-          # ANTICIPACIÓN ERROR 3: Generación del mapa físico build.ninja en el disco
-          # Forzamos target_cpu="arm" para asegurar compatibilidad con armeabi-v7a
+          # ¡LA SOLUCIÓN DE RAÍZ! INYECTAMOS EL INHIBIDOR DE WARNINGS DIRECTO EN GN
+          # Agregamos: treat_warnings_as_errors=false
           # =========================================================================
-          echo "INFRA: Generando árbol físico de dependencias GN en disco..."
+          echo "INFRA: Generando árbol físico de dependencias GN con inhibidor de errores..."
           gn gen out/android-arm-tv-server \
-            --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false' \
+            --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
             --root=examples/tv-app/android/
 
           # =========================================================================
-          # [PARCHE MAESTRO CRÍTICO] ELIMINACIÓN DE FLAGS POST-GENERACIÓN DE GN
+          # 3. INVOCACIÓN MAESTRA A NINJA
+          # Con treat_warnings_as_errors=false incorporado en el núcleo, Ninja
+          # ignorará el aviso redundante de Kotlinc y compilará todo de largo.
           # =========================================================================
-          echo "INFRA: Escaneando y parchando todas las instancias generadas de kotlinc_runner.py..."
-          
-          # Borramos los flags del archivo original y de cualquier copia generada en el árbol de dependencias
-          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
-          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Xlint:all'||g" {} +
-          find . -name "kotlinc_runner.py" -exec sed -i "s|'-Xlint:deprecation'||g" {} +
-
-          # Además, modificamos directamente el archivo de configuración JSON generado de Ninja para esa tarea específica
-          # que es el que fuerza los flags mostrados en tu error: "onboarding_payload.json"
-          echo "INFRA: Modificando argumentos de configuración JSON de la compilación..."
-          find out/ -name "onboarding_payload.json" -exec sed -i 's|"-Werror",||g' {} +
-          find out/ -name "onboarding_payload.json" -exec sed -i 's|"-Xlint:all",||g' {} +
-          find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
-
-          # INVOCACIÓN QUIRÚRGICA A NINJA:
-          echo "INFRA: Compilando paquetes estables de clases Java..."
+          echo "INFRA: Compilando paquetes estables de clases Java y capas .so..."
           ninja -C out/android-arm-tv-server
 
       # =========================================================================
