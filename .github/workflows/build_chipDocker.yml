@@ -1,5 +1,4 @@
 name: Docker - Build and Freeze Matter Environment
-# Este workflow clona el código fuente y empaqueta un búnker Docker personalizado
 
 on:
   workflow_dispatch: # Lanzamiento manual desde la interfaz web
@@ -10,7 +9,7 @@ jobs:
     permissions:
       contents: read
       packages: write # Permiso obligatorio para poder subir la imagen a tu perfil de GitHub
-
+    
     steps:
       - name: Checkout Local Repository (PubIrZ/MatterTVApp)
         uses: actions/checkout@v4
@@ -22,6 +21,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Pistas: Convertimos el actor a minúsculas usando Bash y lo guardamos en GITHUB_ENV
+      - name: Set actor to lowercase
+        run: |
+          echo "ACTOR_LOWERCASE=${{ github.actor }}" | tr '[:upper:]' '[:lower:]' >> $GITHUB_ENV
+
       # =========================================================================
       # CONSTRUCCIÓN DINÁMICA DEL BÚNKER: Inyectamos el SDK v1.3 dentro de Docker
       # =========================================================================
@@ -31,5 +35,5 @@ jobs:
           context: .
           file: ./dockerfile
           push: true
-          # Expresión corregida en minúsculas dinámicas y libre de errores sintácticos
-          tags: ghcr.io/${{ lower(github.actor) }}/matter-frozen-env:latest
+          # Usamos la variable de entorno generada en el paso anterior
+          tags: ghcr.io/${{ env.ACTOR_LOWERCASE }}/matter-frozen-env:latest
