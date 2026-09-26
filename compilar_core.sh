@@ -6,21 +6,16 @@ set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
 # =========================================================================
 # ¡EL PARCHE CLAVE AN_TI-CIPD DE CONFIGURACIÓN!
-# Vaciamos por completo el archivo JSON que obliga a Pigweed a buscar ZAP en internet
 # =========================================================================
 echo "INFRA: Neutralizando configuraciones JSON rígidas de CIPD para ZAP..."
 if [ -f "scripts/setup/zap.json" ]; then
     echo '{"packages": []}' > scripts/setup/zap.json
     echo "SUCCESS: Archivo scripts/setup/zap.json neutralizado."
 fi
-
-# Buscamos de forma recursiva cualquier otra declaración de paquete ZAP de CIPD y la vaciamos
 find . -name "zap.json" -exec sh -c 'echo "{\"packages\": []}" > "{}"' \;
 
 # =========================================================================
 # ¡HOT PATCH DE COMPATIBILIDAD PYTHON 3.12 PARA PIGWEED!
-# Forzamos la actualización de typing_extensions en el sistema y en el venv interno
-# antes de activar el entorno, eliminando la excepción de TypeVar de raíz.
 # =========================================================================
 echo "INFRA: Aplicando parche de compatibilidad Python 3.12 para TypeVar..."
 pip install --upgrade typing-extensions --quiet || true
@@ -32,6 +27,16 @@ fi
 
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
+
+# =========================================================================
+# ¡LA SOLUCIÓN AL ERROR DE ANDROID.JAR!
+# Forzamos al sdkmanager nativo del contenedor Docker a descargar la API 26
+# =========================================================================
+echo "INFRA: Inyectando la plataforma Android API 26 faltante en el SDK de Docker..."
+export ANDROID_HOME="/usr/local/lib/android/sdk"
+yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
+echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente en el búnker."
 
 echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
 python3 third_party/android_deps/set_up_android_deps.py
