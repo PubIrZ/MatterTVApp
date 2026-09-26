@@ -9,8 +9,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # =========================================================================
-      # 1. PERSISTENCIA ABSOLUTA DE ENTORNO: SALTA LA DESCARGA DE SUB-MÓDULOS
+   # =========================================================================
+      # 1. PERSISTENCIA ABSOLUTA DE ENTORNO (Descarga del Build previo de la Nube)
       # =========================================================================
       - name: Cache Matter Full Source Code and Native Toolchains
         uses: actions/cache@v4
@@ -22,46 +22,43 @@ jobs:
             ${{ github.workspace }}/third_party
             ${{ github.workspace }}/examples
             ${{ github.workspace }}/.git
-          # Usamos una clave combinada con el ID de ejecución y restore-keys estáticas
+            ${{ github.workspace }}/build
+            ${{ github.workspace }}/scripts
+            ${{ github.workspace }}/src
+          # Clave incremental dinámica combinada con restore-keys
           key: ${{ runner.os }}-matter-ultra-fast-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-matter-ultra-fast-    
             
       # =========================================================================
-      # 2. CHECKOUT INTELIGENTE: No destructivo si venimos de un re-intento
+      # 2. EVALUACIÓN DE DISCO VIRTUAL (Revisamos si los submódulos sobrevivieron)
       # =========================================================================
-      - name: Smart Checkout and Submodules
-        # Solo clonamos de forma recursiva pesada si la carpeta de sub-módulos está literalmente vacía
-        # Esto es un bypass infalible a los fallos de lógicas de las claves de GitHub.
+      - name: Smart Evaluation of Working Tree
+        id: eval-disk
         run: |
           if [ -d "${{ github.workspace }}/third_party/mbedtls/repo" ] && [ "$(ls -A ${{ github.workspace }}/third_party/mbedtls/repo 2>/dev/null)" ]; then
-            echo "CACHE_FOUND=true" >> $GITHUB_ENV
-            echo "INFRA: Submódulos detectados en disco local virtual. Saltando clonación de red."
+            echo "CACHE_EXISTS=true" >> $GITHUB_ENV
+            echo "INFRA: Submódulos detectados intactos en disco virtual. Omitiendo descargas."
           else
-            echo "CACHE_FOUND=false" >> $GITHUB_ENV
-            echo "INFRA: Carpeta de submódulos vacía o ausente. Iniciando descarga de emergencia..."
+            echo "CACHE_EXISTS=false" >> $GITHUB_ENV
+            echo "INFRA: Carpeta de submódulos ausente. Activando clonación inicial..."
           fi
 
-      - name: Emergency Checkout (Only if Disk is Empty)
-        # Si se detectó la caché en el paso anterior, este bloque pasa a estado "SKIPPED" en 0 segundos
-        if: env.CACHE_FOUND == 'false'
+      # =========================================================================
+      # 3. CHECKOUT INTELIGENTE: Bloqueamos el formateo de disco con clean: false
+      # =========================================================================
+      - name: Emergency Checkout and Submodules
+        # Si la caché existe y el disco está poblado, este paso cambia a "Skipped" en 0 segundos
+        if: env.CACHE_EXISTS == 'false'
         uses: actions/checkout@v4
         with:
           repository: 'project-chip/connectedhomeip'
           ref: 'v1.3-branch'
           fetch-depth: 1
-          clean: false # [CRÍTICO] Evita que GitHub borre lo que haya descargado la caché
+          clean: false # [CRÍTICO] Prohíbe explícitamente a la acción borrar lo que restauró la caché
           submodules: true
 
-      - name: Verify Environment Status
-        run: |
-          echo "=== CONTROL DE FLUJO DE TRABAJO ==="
-          if [ "${{ env.CACHE_FOUND }}" = "true" ]; then
-            echo "SUCCESS: El entorno completo fue restaurado desde la caché. Descargas de red omitidas."
-          else
-            echo "WARNING: No se encontró caché previa en el disco. Ejecutando clonado inicial completo."
-          fi
-
+          
       # =========================================================================
       # MATRIZ DE CONFIGURACIÓN DE JAVA DUAL: ADAPTADO PARA COMPILACIÓN KOTLIN
       # =========================================================================
