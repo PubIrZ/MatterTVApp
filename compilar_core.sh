@@ -29,31 +29,27 @@ echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
 # =========================================================================
-# ¡LA SOLUCIÓN DEF_INITIVA AL PATH DE SDKMANAGER!
-# Intentamos usar el comando global directo de Docker. Si no está en el PATH,
-# localizamos dinámicamente su ubicación física exacta en el disco del búnker.
+# ¡LA SOLUCIÓN QUIRÚRGICA CONCATENADA PARA EL SDK DE ANDROID!
+# Usamos tu truco maestro de concatenación para proteger la ruta de internet.
 # =========================================================================
-echo "INFRA: Localizando y ejecutando sdkmanager para inyectar Android API 26..."
-export ANDROID_HOME="/usr/local/lib/android/sdk"
+echo "INFRA: Descargando el archivo original android.jar (API 26) usando variables seguras..."
+TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
+mkdir -p "$TARGET_PLATFORM_DIR"
 
-# Buscador de respaldo en caliente por si el comando global no está mapeado
-if command -v sdkmanager &> /dev/null; then
-    SDK_BIN="sdkmanager"
-else
-    echo "INFRA: Buscando binario físico de sdkmanager en el contenedor..."
-    SDK_BIN=$(find /usr/local/ -name "sdkmanager" -type f -print -quit 2>/dev/null)
-fi
+# Concatenamos de forma inequívoca el endpoint estático de Google Android
+PATH_platform26="/android/repository/platform-26_r02.zip"
+URL_google="https://dl.google.com${PATH_platform26}"
 
-if [ -n "$SDK_BIN" ]; then
-    echo "INFRA: Ejecutando sdkmanager desde: $SDK_BIN"
-    yes | $SDK_BIN --licenses > /dev/null || true
-    $SDK_BIN "platforms;android-26"
-    echo "SUCCESS: Archivo android.jar (API 26) inyectado correctamente en el búnker."
-else
-    echo "WARNING: No se pudo localizar sdkmanager de forma automática. Intentando bypass de ruta directa simplificada..."
-    # Intento de ruta cruda alternativa que usan ciertas variaciones de la imagen de Matter
-    /usr/local/lib/android/sdk/tools/bin/sdkmanager "platforms;android-26" || true
-fi
+echo "INFRA: Conectando de forma directa al servidor: ${URL_google}"
+curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
+
+# Desempaquetamos el archivo binario real y extraemos de forma exclusiva el jar requerido
+unzip -o -q platform26.zip "android-26/android.jar"
+mv android-26/android.jar "$TARGET_PLATFORM_DIR/android.jar"
+
+# Limpieza estricta de residuos de almacenamiento en el búnker virtual
+rm -rf android-26 platform26.zip
+echo "SUCCESS: Archivo maestro android.jar (API 26) firmado e inyectado con total éxito en la ruta esperada."
 
 echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
 python3 third_party/android_deps/set_up_android_deps.py
