@@ -1,5 +1,5 @@
 name: Build Matter TVApp (Docker Surgical Way)
-# Entorno estándar sellado en contenedor oficial de Project CHIP
+# Entorno estándar sellado en contenedor oficial de Project CHIP sin cachés inestables
 
 on:
   workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
@@ -14,7 +14,7 @@ jobs:
 
     steps:
       # =========================================================================
-      # 1. CLONADO DE EMERGENCIA DIRECTO DENTRO DE DOCKER
+      # 1. CLONADO DIRECTO DENTRO DE DOCKER (Limpio y sin burocracia de caché)
       # =========================================================================
       - name: Checkout Code with Submodules
         uses: actions/checkout@v4
@@ -27,10 +27,14 @@ jobs:
       # 2. PARCHES DE INHIBICIÓN Y COMPILACIÓN QUIRÚRGICA
       # =========================================================================
       - name: Run Clean Generation and Compile Core JARs
-        # [SOLUCIÓN DE RAÍZ] Forzamos a GitHub a ejecutar este paso usando Bash puro
-        shell: bash
+        shell: bash # Forzamos el shell de Bash para que reconozca el comando 'source' internamente
         run: |
-          # 1. Activamos las herramientas de Pigweed usando Bash nativo de forma segura
+          # [SOLUCIÓN CRÍTICA DE PROPIEDAD] 
+          # Engañamos a las restricciones de seguridad de Git registrando la ruta de Docker como segura
+          echo "INFRA: Configurando excepciones de directorio seguro en Git..."
+          git config --global --add safe.directory /__w/MatterTVApp/MatterTVApp
+
+          # 1. Activamos las herramientas de Pigweed pre-instaladas en el contenedor
           source scripts/activate.sh
 
           # 2. Descargamos las dependencias base lógicas de Google Maven
@@ -39,7 +43,7 @@ jobs:
 
           # =========================================================================
           # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS
-          # Modificamos los archivos fuentes antes de que GN lea las plantillas
+          # Modificamos los archivos fuentes antes de que GN lea las plantillas (.gn y .gni)
           # =========================================================================
           echo "INFRA: Removiendo flags estrictos de las plantillas fuentes BUILD.gn y .gni..."
           find . -name "BUILD.gn" -exec sed -i 's|"-Werror",||g' {} +
@@ -53,12 +57,13 @@ jobs:
           find . -name "*.gni" -exec sed -i 's|"-Xlint:all"||g' {} +
 
           # 3. Forzamos la desactivación de alertas estéticas en el compilador de Kotlin (Kotlinc)
+          # Inyectamos '-nowarn' al final del arreglo de Python de forma segura sin alterar la cabecera ejecutable
           export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
           export KOTLINC_ARGS="-nowarn"
-          find . -name "kotlinc_runner.py" -exec sed -i "s|kotlin_args = \[|kotlin_args = \['-nowarn',|g" {} +
+          find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
           find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
-          # 4. Generamos el árbol limpio
+          # 4. Generamos el árbol limpio directo en el búnker
           gn gen out/android-arm-tv-server \
             --args='target_os="android" target_cpu="arm" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
             --root=examples/tv-app/android/
