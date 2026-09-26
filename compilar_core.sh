@@ -4,6 +4,9 @@
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
+# Add this ONLY if you want to force Ninja to clean its database layout:
+# rm -rf out
+
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
