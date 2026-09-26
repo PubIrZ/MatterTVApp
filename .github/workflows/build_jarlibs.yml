@@ -227,15 +227,21 @@ jobs:
           echo "INFRA: activate.sh (Master environment initialization script): Initializes Pigweed"
           source scripts/activate.sh
 
-          # 2. INVOCACIÓN DE PREPARACIÓN (Toma menos de 20 segundos con caché):
-          # Ejecutamos el script oficial con el flag "--dry-run". Esto obliga al motor a:
-          #   - Descargar las dependencias Gradle/Java faltantes (como annotation-1.1.0.jar)
-          #   - Generar el mapa estructural interno de GN de forma correcta.
-          # Al usar '--dry-run', el script se detendrá inmediatamente después de preparar el entorno,
-          # cumpliendo tu objetivo de saltarse la compilación pesada de la app de ejemplo.
-          echo "INFRA: Ejecutando preparación automática de dependencias de Android..."
-          ./scripts/build/build_examples.py --target android-arm-tv-server --dry-run build
+          # =========================================================================
+          # ANTICIPACIÓN ERROR 1 & 2: Descarga física de JARs de soporte (Google Maven)
+          # =========================================================================
+          echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
+          python3 third_party/android_deps/set_up_android_deps.py
+          third_party/java_deps/set_up_java_deps.sh
 
+          # =========================================================================
+          # ANTICIPACIÓN ERROR 3: Generación del mapa físico build.ninja en el disco
+          # Forzamos target_cpu="arm" para asegurar compatibilidad con armeabi-v7a
+          # =========================================================================
+          echo "INFRA: Generando árbol físico de dependencias GN en disco..."
+          gn gen out/android-arm-tv-server \
+            --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false' \
+            --root=examples/tv-app/android/
 
           # =========================================================================
           # [PARCHE MAESTRO CRÍTICO] ELIMINACIÓN DE FLAGS POST-GENERACIÓN DE GN
