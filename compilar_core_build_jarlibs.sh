@@ -4,6 +4,11 @@
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
+# =========================================================================
+# ¡EL LIMPIADOR MAESTRO DE SALTOS DE LÍNEA DE WINDOWS (CRLF a LF)!
+# =========================================================================
+sed -i 's/\r$//' "$0" || true
+
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
