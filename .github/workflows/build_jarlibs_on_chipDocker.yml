@@ -1,0 +1,126 @@
+name: Build Matter TVApp (Instant Custom Docker)
+
+on:
+  workflow_dispatch: # Lanzamiento manual rápido
+
+jobs:
+  surgical-compile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read # Permiso para leer la imagen desde tu GitHub Container Registry
+
+    steps:
+      # =========================================================================
+      # 1. EXTRACCIÓN DE METADATOS Y SANITIZACIÓN A MINÚSCULAS
+      # =========================================================================
+      - name: Extract Docker metadata (Format to lowercase)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/matter-frozen-env
+          tags: |
+            type=raw,value=latest
+
+      - name: Checkout Local Patches (PubIrZ/MatterTVApp)
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # =========================================================================
+      # 2. LEVANTAMOS TU CONTENEDOR EN MINÚSCULAS DE FORMA DINÁMICA
+      # Mapeamos la carpeta de trabajo actual para que el contenedor vea el código.
+      # =========================================================================
+      - name: Launch Matter Environment Container
+        run: |
+          echo "INFRA: Levantando contenedor personalizado sanitizado: ${{ steps.meta.outputs.tags }}"
+          docker run -d --name matter_bunker \
+            -v ${{ github.workspace }}:/workspace_host \
+            -w /workspace \
+            --network host \
+            ${{ steps.meta.outputs.tags }} \
+            sleep infinity
+
+      # =========================================================================
+      # 3. MOTOR DE COMPILACIÓN DINÁMICA CON CAPACIDAD DE ESCUCHA EN VIVO
+      # =========================================================================
+      - name: Run Infinite Loop Compiler with Git Polling
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Configuramos Git en el host runner para controlar las alertas de red
+          git config --global --add safe.directory ${{ github.workspace }}
+          
+          # Guardamos el Hash del commit actual con el que arrancó el pipeline
+          LAST_HASH=$(git rev-parse HEAD)
+          echo "INFRA: Iniciando monitor de compilación. Commit inicial: $LAST_HASH"
+
+          # =========================================================================
+          # BUCLE DE CONTROL INFINITO (Mantiene la máquina virtual viva)
+          # =========================================================================
+          while true; do
+            echo "========================================================================="
+            echo "INFRA: Sincronizando script compilar_core.sh y lanzando compilación..."
+            echo "========================================================================="
+            
+            # Inyectamos tu script compilar_core.sh modificado en caliente dentro del Docker vivo
+            docker cp ${{ github.workspace }}/compilar_core.sh matter_bunker:/workspace/compilar_core.sh
+            docker exec matter_bunker chmod +x /workspace/compilar_core.sh
+
+            # Ejecutamos tu script de compilación nativo dentro de Docker.
+            # Usamos '|| true' para capturar el fallo y activar el modo escucha en caliente.
+            if docker exec -w /workspace matter_bunker ./compilar_core.sh; then
+              echo "SUCCESS: ¡Compilación completada con éxito rotundo!"
+              
+              # Sacamos los archivos JARs generados desde las entrañas de Docker hacia el host antes de salir
+              docker cp matter_bunker:/workspace/out ${{ github.workspace }}/out
+              break 
+            else
+              echo "❌ ERROR: La compilación ha fallado en algún punto del proceso."
+              echo "========================================================================="
+              echo "📡 MODO ESCUCHA ACTIVO: Modifica compilar_core.sh en tu PC y haz git push."
+              echo "La máquina virtual de GitHub se quedará esperando tus cambios en vivo..."
+              echo "========================================================================="
+            fi
+
+            # BUCLE SECUNDARIO DE ESCUCHA POR RED (Monitorea cambios en GitHub cada 15 segundos)
+            while true; do
+              sleep 15
+              
+              # Consultamos a la API de GitHub de forma silenciosa para ver si hay un nuevo commit en la rama
+              git fetch --quiet origin
+              NEW_HASH=$(git rev-parse origin/${{ github.ref_name }})
+
+              # Si los Hashes no coinciden, significa que hiciste un 'git push' desde tu computadora
+              if [ "$LAST_HASH" != "$NEW_HASH" ]; then
+                echo "🔔 ¡ALERTA! Detectado nuevo cambio en compilar_core.sh en internet."
+                echo "Descargando parche en caliente... (Commit anterior: $LAST_HASH -> Nuevo: $NEW_HASH)"
+                
+                # Descargamos el nuevo script modificado directo al disco virtual
+                git pull origin ${{ github.ref_name }} --quiet
+                
+                # Actualizamos nuestro token de control para la siguiente vuelta del bucle
+                LAST_HASH=$NEW_HASH
+                break 
+              fi
+            done
+          done
+
+      # =========================================================================
+      # 4. EXTRACCIÓN AUTOMÁTICA DE LOS RECURSOS GENERADOS EN EL HOST
+      # =========================================================================
+      - name: Upload Core SDK JAR Artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-core-java-jars
+          path: |
+            ${{ github.workspace }}/out/android-arm-tv-server/lib/*.jar
+            ${{ github.workspace }}/out/android-arm-tv-server/gen/third_party/**/*.jar
+
