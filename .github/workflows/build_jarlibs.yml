@@ -9,10 +9,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-   # =========================================================================
-      # 1. PERSISTENCIA ABSOLUTA DE ENTORNO (Descarga del Build previo de la Nube)
       # =========================================================================
-      - name: Cache Matter Full Source Code and Native Toolchains
+      # 1. RECUPERACIÓN TOTAL DE DISCO (Restauramos absolutamente todo)
+      # =========================================================================
+      - name: Restore Complete Workspace from Cache
         uses: actions/cache@v4
         id: build-cache
         with:
@@ -23,40 +23,37 @@ jobs:
             ${{ github.workspace }}/examples
             ${{ github.workspace }}/.git
             ${{ github.workspace }}/build
+            ${{ github.workspace }}/build_overrides
+            ${{ github.workspace }}/config
+            ${{ github.workspace }}/credentials
+            ${{ github.workspace }}/data_model
+            ${{ github.workspace }}/docs
+            ${{ github.workspace }}/integrations
             ${{ github.workspace }}/scripts
             ${{ github.workspace }}/src
-          # Clave incremental dinámica combinada con restore-keys
-          key: ${{ runner.os }}-matter-ultra-fast-${{ github.run_id }}
+            ${{ github.workspace }}/zzz_generated
+            ${{ github.workspace }}/BUILD.gn
+            ${{ github.workspace }}/gn_build.sh
+            ${{ github.workspace }}/pigweed.json
+          # Usamos una clave que mantenga consistencia para re-runs
+          key: ${{ runner.os }}-matter-incremental-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-matter-ultra-fast-    
-            
-      # =========================================================================
-      # 2. EVALUACIÓN DE DISCO VIRTUAL (Revisamos si los submódulos sobrevivieron)
-      # =========================================================================
-      - name: Smart Evaluation of Working Tree
-        id: eval-disk
-        run: |
-          if [ -d "${{ github.workspace }}/third_party/mbedtls/repo" ] && [ "$(ls -A ${{ github.workspace }}/third_party/mbedtls/repo 2>/dev/null)" ]; then
-            echo "CACHE_EXISTS=true" >> $GITHUB_ENV
-            echo "INFRA: Submódulos detectados intactos en disco virtual. Omitiendo descargas."
-          else
-            echo "CACHE_EXISTS=false" >> $GITHUB_ENV
-            echo "INFRA: Carpeta de submódulos ausente. Activando clonación inicial..."
-          fi
+            ${{ runner.os }}-matter-incremental-
 
       # =========================================================================
-      # 3. CHECKOUT INTELIGENTE: Bloqueamos el formateo de disco con clean: false
+      # 2. CHECKOUT DE EMERGENCIA (SÓLO SI LA CACHÉ ESTÁ EN BLANCO)
       # =========================================================================
-      - name: Emergency Checkout and Submodules
-        # Si la caché existe y el disco está poblado, este paso cambia a "Skipped" en 0 segundos
-        if: env.CACHE_EXISTS == 'false'
-        uses: actions/checkout@v4
-        with:
-          repository: 'project-chip/connectedhomeip'
-          ref: 'v1.3-branch'
-          fetch-depth: 1
-          clean: false # [CRÍTICO] Prohíbe explícitamente a la acción borrar lo que restauró la caché
-          submodules: true
+      # Reemplazamos la acción de checkout por un script que evalúa físicamente el disco.
+      # Si la caché inyectó el código anterior, este paso se saltará por completo y NO borrará nada.
+      - name: Emergency Checkout (Only if Disk is completely empty)
+        run: |
+          if [ -d "${{ github.workspace }}/src" ] && [ "$(ls -A ${{ github.workspace }}/src 2>/dev/null)" ]; then
+            echo "INFRA: Código fuente detectado en el disco virtual. Saltando clonación destructiva."
+          else
+            echo "INFRA: Disco vacío. Descargando el repositorio por primera vez..."
+            git clone --depth 1 --branch v1.3-branch https://github.com .
+            git submodule update --init --recursive --depth 1
+          fi
 
           
       # =========================================================================
