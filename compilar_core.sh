@@ -41,7 +41,7 @@ TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
 mkdir -p "$TARGET_PLATFORM_DIR"
 
 PATH_platform26="/android/repository/platform-26_r02.zip"
-URL_google="https://google.com${PATH_platform26}"
+URL_google="https://dl.google.com${PATH_platform26}"
 
 echo "INFRA: Conectando de forma directa al servidor de descargas: ${URL_google}"
 curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
