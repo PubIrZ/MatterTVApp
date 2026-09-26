@@ -6,8 +6,6 @@ set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
 # =========================================================================
 # ¡EL LIMPIADOR MAESTRO DE SALTOS DE LÍNEA DE WINDOWS (CRLF a LF)!
-# Borra el carácter invisible '\r' que inyectan los editores de Windows
-# y que provoca el fallo de 'exec format error' en el contenedor Docker.
 # =========================================================================
 sed -i 's/\r$//' "$0" || true
 
@@ -70,11 +68,23 @@ python3 third_party/android_deps/set_up_android_deps.py
 third_party/java_deps/set_up_java_deps.sh
 
 # =========================================================================
-# TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++)
+# TRUCO MAESTRO 2 CORREGIDO: MAPEAMOS LA VARIABLE REAL DEL NDK DE DOCKER ($ANDROID_NDK)
+# Si por alguna razón ambas vienen vacías, inyectamos la ruta física absoluta de la imagen.
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
-NDK_PATH="$ANDROID_NDK_ROOT"
+if [ -n "$ANDROID_NDK" ]; then
+    NDK_PATH="$ANDROID_NDK"
+elif [ -n "$ANDROID_NDK_ROOT" ]; then
+    NDK_PATH="$ANDROID_NDK_ROOT"
+else
+    NDK_PATH="/opt/android/android-ndk-r25c" # Ruta absoluta de respaldo oficial de la imagen
+fi
+
 echo "INFRA: Detectada ruta NDK del sistema: $NDK_PATH"
+
+# Forzamos la exportación global para que GN y Ninja la hereden perfectamente sincronizada
+export ANDROID_NDK_ROOT="$NDK_PATH"
+export ANDROID_NDK_HOME="$NDK_PATH"
 
 TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
 TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
