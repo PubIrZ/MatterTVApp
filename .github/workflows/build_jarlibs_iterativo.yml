@@ -138,83 +138,81 @@ jobs:
           ZAP_INSTALL_PATH: /usr/local/bin
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Configuramos Git en el host runner para asegurar el control de alertas de red
           git config --global --add safe.directory ${{ github.workspace }}
-          
-          # Guardamos el Hash del commit actual con el que arrancó el pipeline nativo
           LAST_HASH=$(git rev-parse HEAD)
           echo "INFRA NATIVA: Monitor activo. Commit inicial: $LAST_HASH"
 
-          # =========================================================================
-          # BUCLE DE CONTROL INFINITO (Mantiene la máquina virtual viva en el host)
-          # =========================================================================
           while true; do
             echo "========================================================================="
-            echo "INFRA NATIVA: Sincronizando script compilar_core_build_jarlib.sh y lanzando compilación..."
+            echo "INFRA NATIVA: Sincronizando script compilar_core_build_jarlibs.sh y lanzando..."
             echo "========================================================================="
             
-            # Volvemos a la raíz utilizando la variable global e indestructible de GitHub Actions
             cd "${{ github.workspace }}"
             
-            # Copiamos el script protegiendo el flujo (si falla el cp, no colapsa el job entero)
-            if cp -f compilar_core_build_jarlib.sh matter-sdk/ 2>/dev/null; then
-              # Entramos a la carpeta aislada del SDK de Matter para ejecutar el script nativamente
+            if cp -f compilar_core_build_jarlibs.sh matter-sdk/ 2>/dev/null; then
               cd matter-sdk
-              ls -al *.sh
-              chmod +x compilar_core_build_jarlib.sh
+              chmod +x compilar_core_build_jarlibs.sh
 
-              # Ejecutamos tu script de compilación nativo directo en el host
-              if ./compilar_core_build_jarlib.sh; then
-                echo "SUCCESS: ¡Compilación nativa completada con éxito rotundo!"
-                break # Rompe el bucle infinito principal y pasa al paso final de subir los JARs
+              # Desactivamos el cierre inmediato por error para evaluar el código de salida
+              set +e
+              ./compilar_core_build_jarlibs.sh
+              BUILD_STATUS=$?
+              set -e
+
+              # =========================================================================
+              # EVALUACIÓN DE CONTROL SEGÚN LOS REQUISITOS DEL SCRIPT (.sh)
+              # =========================================================================
+              if [ $BUILD_STATUS -eq 0 ]; then
+                echo "========================================================================="
+                echo "🎉 SUCCESS: Compilación exitosa. Subiendo artefactos finales y saliendo..."
+                echo "========================================================================="
+                gh artifact upload --name matter-all-build-outputs out/
+                break # TERMINA EL WORKFLOW CON ÉXITO
+                
+              elif [ $BUILD_STATUS -eq 10 ]; then
+                echo "========================================================================="
+                echo "🚀 PETICIÓN INTERMEDIA: Subiendo artefactos parciales solicitados por el .sh..."
+                echo "========================================================================="
+                gh artifact upload --name matter-forced-outputs out/
+                echo "✓ Subida completada. Volviendo de inmediato al Modo Escucha..."
+                
               else
-                echo "❌ ERROR: La compilación nativa ha fallado en algún punto del proceso."
+                echo "❌ ERROR: La compilación falló (Código: $BUILD_STATUS). No se sube ningún archivo."
               fi
             else
-              echo "❌ ERROR CRÍTICO: No se encontró 'compilar_core_build_jarlib.sh' en la raíz (${{ github.workspace }})."
-              echo "Asegúrate de que el nombre del archivo en tu PC coincide exactamente (mayúsculas/minúsculas)."
+              echo "❌ ERROR CRÍTICO: No se encontró 'compilar_core_build_jarlibs.sh' en la raíz."
             fi
 
             echo "========================================================================="
-            echo "📡 MODO ESCUCHA NATIVO ACTIVO: Modifica compilar_core_build_jarlib.sh en tu PC y haz git push."
-            echo "La máquina virtual de GitHub se quedará esperando tus cambios en vivo..."
+            echo "📡 MODO ESCUCHA NATIVO ACTIVO: Modifica compilar_core_build_jarlibs.sh en tu PC y haz git push."
+            echo "La máquina virtual se quedará esperando tus cambios en vivo..."
             echo "========================================================================="
 
-            # Volvemos a la raíz del repositorio propio para poder escuchar las actualizaciones de Git
             cd "${{ github.workspace }}"
-
-            # BUCLE SECUNDARIO DE ESCUCHA POR RED (Monitorea cambios en GitHub cada 15 segundos)
             while true; do
               sleep 15
-              
-              # Consultamos a la API de GitHub de forma silenciosa para ver si hay un nuevo commit en la rama
               git fetch --quiet origin
               NEW_HASH=$(git rev-parse origin/${{ github.ref_name }})
-
-              # Si los Hashes no coinciden, significa que hiciste un 'git push' desde tu computadora
               if [ "$LAST_HASH" != "$NEW_HASH" ]; then
-                echo "🔔 ¡ALERTA NATIVA! Detectado nuevo cambio en compilar_core_build_jarlib.sh en internet."
-                echo "Descargando parche en caliente... (Commit anterior: $LAST_HASH -> Nuevo: $NEW_HASH)"
-                
-                # Descargamos el nuevo script modificado directo al disco del host runner
+                echo "🔔 ¡ALERTA NATIVA! Detectado cambio. Descargando parche en caliente..."
                 git pull origin ${{ github.ref_name }} --quiet
-                
-                # Actualizamos nuestro token de control para la siguiente vuelta del bucle
                 LAST_HASH=$NEW_HASH
-                break # Rompe este minibucle de espera y vuelve al inicio del bucle principal a compilar
+                break 
               fi
             done
           done
 
 
       # =========================================================================
-      # EXTRACCIÓN Y SUBIDA AUTOMÁTICA DE LOS ARCHIVOS JAR DE CLASES
+      # EXTRACCIÓN Y SUBIDA COMPLETA DE TODO EL ENTORNO CONSTRUIDO (BUILD OUTPUT)
       # =========================================================================
-      - name: Upload Core SDK JAR Artifacts
-        if: success()
+      - name: Upload All Build Output Directory Structure
+        if: always() # Sube los archivos incluso si el bucle se detiene manualmente o falla a medias
         uses: actions/upload-artifact@v4
         with:
-          name: matter-core-java-jars
+          name: matter-all-build-outputs
           path: |
-            matter-sdk/out/android-arm-tv-server/lib/*.jar
-            matter-sdk/out/android-arm-tv-server/gen/third_party/**/*.jar
+            matter-sdk/out/
+          include-hidden-files: true # Asegura que se incluyan archivos de configuración ocultos generados por GN/Ninja
+          compression-level: 6       # Balance óptimo entre velocidad de empaquetado y tamaño del archivo zip resultante
+
