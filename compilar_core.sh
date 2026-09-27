@@ -127,12 +127,16 @@ find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call
 find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
 # =========================================================================
-# SINCRONIZACIÓN GN - FIJANDO EL PARÁMETRO DE API EXIGIDO POR EL SDK (API 26)
+# SINCRONIZACIÓN GN - CORRECCIÓN DE LA VARIABLE NATIVA A android_target_api_level
 # =========================================================================
-echo "INFRA: Sincronizando árbol estructural de GN (Fijando target_api_level a 26)..."
+echo "INFRA: Sincronizando árbol estructural de GN (Fijando android_target_api_level a 26)..."
 gn gen out/android-arm-tv-server \
-  --args='target_os="android" target_cpu="arm" android_api_level=26 android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
+  --args='target_os="android" target_cpu="arm" android_target_api_level=26 android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
+
+# Doble capa de seguridad: Forzamos la bandera de la API global directo en las llamadas generadas
+echo "INFRA: Modificando banderas de preprocesador en Ninja para asegurar compatibilidad de red..."
+find out/ -name "*.ninja" -exec sed -i 's|-DCHIP_HAVE_CONFIG_H=1|-DCHIP_HAVE_CONFIG_H=1 -D__ANDROID_API__=26|g' {} +
 
 echo "INFRA: Purgando flags incompatibles de Kotlin (-Xlint) de los artefactos de Ninja..."
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
@@ -142,4 +146,3 @@ find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} +
 
 echo "INFRA: Ninja reanudará la compilación utilizando las especificaciones de la API 26..."
 ninja -C out/android-arm-tv-server
-
