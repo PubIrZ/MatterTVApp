@@ -4,6 +4,9 @@
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
+# Add this ONLY if you want to force Ninja to clean its database layout:
+rm -rf out
+
 # =========================================================================
 # ¡EL LIMPIADOR MAESTRO DE SALTOS DE LÍNEA DE WINDOWS (CRLF a LF)!
 # =========================================================================
@@ -104,13 +107,6 @@ if [ -n "$KOTLINC_PATH" ]; then
 fi
 
 # =========================================================================
-# ¡ELIMINACIÓN DE CACHÉ CORRUPTA! (Evita loops e inyecciones viejas de GN)
-# =========================================================================
-echo "INFRA: Purgando directorio de salida antiguo para asegurar un build limpio..."
-rm -rf out/android-arm-tv-server
-
-
-# =========================================================================
 # REMOCIÓN DE FLAGS ESTRICTOS (-Werror y -Xlint) EN FUENTES
 # =========================================================================
 echo "INFRA: Removiendo flags estrictos de las plantillas fuentes BUILD.gn y .gni..."
@@ -127,12 +123,6 @@ export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 
-# =========================================================================
-# PURGE ZAP TEMPORARY ARTIFACTS AND RE-ESTABLISH KOTLINC TRACING PATHS
-# =========================================================================
-echo "INFRA: Purging dynamic ZAP codegen caches to prevent Kotlin compilation loops..."
-rm -rf zzz_generated/
-rm -rf examples/tv-app/android/third_party/connectedhomeip/zzz_generated/
 
 # Locate kotlinc and enforce fallback execution mapping permissions 
 KOTLINC_BIN=$(find .environment/ -name "kotlinc" -type f -print -quit 2>/dev/null)
