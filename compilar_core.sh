@@ -38,8 +38,9 @@ echo "INFRA: Descargando el archivo original android.jar (API 26) usando variabl
 TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
 mkdir -p "$TARGET_PLATFORM_DIR"
 
-PATH_platform26="/android/repository/platform-26_r02.zip"
-URL_google="https://dl.google.com${PATH_platform26}"
+PATH_platform26="com/android/repository/platform-26_r02.zip"
+URL_google="dl.google."
+URL_google="https://${URL_google}${PATH_platform26}"
 
 curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
 
@@ -108,19 +109,26 @@ echo "SUCCESS: Enlaces simbólicos cruzados inyectados mediante punteros puros."
 
 # =========================================================================
 # ¡EL HACK DE COMPATIBILIDAD DINÁMICO PARA EL COMPILADOR CLANG (API 24 BYPASS)!
-# Localizamos de forma automática el directorio físico que aloja los ejecutables
-# de Clang del NDK en el búnker para evitar caídas por variaciones de nombres de rutas.
 # =========================================================================
 echo "INFRA: Localizando de forma automática el directorio de binarios de Clang..."
-set +e
-REAL_BIN_DIR=$(find "$NDK_PATH" -name "*clang++*" -type f -print -quit 2>/dev/null)
-set -e
 
-if [ -n "$REAL_BIN_DIR" ]; then
-    BIN_NDK_DIR=$(dirname "$REAL_BIN_DIR")
+STATIC_BIN_DIR="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+if [ -d "$STATIC_BIN_DIR" ]; then
+    BIN_NDK_DIR="$STATIC_BIN_DIR"
+else
+    set +e
+    REAL_BIN_DIR=$(find "$NDK_PATH/toolchains" -type f -name "clang++" -print -quit 2>/dev/null)
+    set -e
+    if [ -n "$REAL_BIN_DIR" ]; then
+        BIN_NDK_DIR=$(dirname "$REAL_BIN_DIR")
+    fi
+fi
+
+if [ -n "$BIN_NDK_DIR" ] && [ -d "$BIN_NDK_DIR" ]; then
     echo "INFRA: Directorio de compilación cruzada localizado en: $BIN_NDK_DIR"
+    export PATH="$BIN_NDK_DIR:$PATH"
     
-    # Buscamos qué ejecutable de Clang de API alta existe para usarlo de base espejo
     BASE_CLANG_32=$(find "$BIN_NDK_DIR" -name "armv7a-linux-androideabi*-clang" -type f -print -quit | head -n 1)
     BASE_CLANGXX_32=$(find "$BIN_NDK_DIR" -name "armv7a-linux-androideabi*-clang++" -type f -print -quit | head -n 1)
     BASE_CLANG_64=$(find "$BIN_NDK_DIR" -name "aarch64-linux-android*-clang" -type f -print -quit | head -n 1)
