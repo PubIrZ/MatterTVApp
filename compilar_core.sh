@@ -70,7 +70,6 @@ mkdir -p "$MIRROR_DEPS_PATH"
 
 if [ -d "third_party/android_deps/artifacts" ]; then
     set +e
-    # El condicional -ef verifica si los dos paths apuntan al mismo nodo físico en disco
     if [ ! "third_party/android_deps/artifacts" -ef "$MIRROR_DEPS_PATH/artifacts" ]; then
         cp -rf third_party/android_deps/artifacts "$MIRROR_DEPS_PATH/" 2>/dev/null || true
     fi
@@ -79,16 +78,20 @@ if [ -d "third_party/android_deps/artifacts" ]; then
 fi
 
 # =========================================================================
-# PURGA QUIRÚRGICA DE FLAGS DE COMPILACIÓN (KOTLINC / JAVA LINTERS)
+# PURGA QUIRÚRGICA DE FLAGS DE COMPILACIÓN EN FUENTES (KOTLINC / JAVA LINTERS)
 # =========================================================================
 echo "INFRA: Desactivando alertas estrictas y flags de linter incompatibles con Kotlin..."
 export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
 
+# Modificamos de raíz el runner de Kotlin para que ignore flags desconocidos de Java como -Xlint
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 
+# Purgamos de forma agresiva cualquier declaración implícita de -Werror o -Xlint en el árbol de fuentes GN
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror",||g' {} + 2>/dev/null || true
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"||g' {} + 2>/dev/null || true
+find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
+find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*"||g' {} + 2>/dev/null || true
 
 # =========================================================================
 # GENERACIÓN DE ENTORNO GN (Alineado con los fuentes nativos de la rama v1.3)
@@ -99,11 +102,13 @@ gn gen out/android-arm-tv-server \
   --root=examples/tv-app/android/
 
 # =========================================================================
-# PURGA POST-GN EN ARTEFACTOS GENERADOS
+# PURGA POST-GN EN ARTEFACTOS GENERADOS (Se ejecuta inmediatamente antes del build)
 # =========================================================================
-echo "INFRA: Limpiando referencias de warnings remanentes en los perfiles de Ninja..."
+echo "INFRA: Purgando referencias de -Xlint heredadas en los perfiles generados por GN..."
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} + 2>/dev/null || true
-find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation",||g' {} + 2>/dev/null || true
+find out/ -name "*.json" -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
+find out/ -name "*.json" -exec sed -i 's|"-Xlint:[^"]*"||g' {} + 2>/dev/null || true
+find out/ -name "*.ninja" -exec sed -i 's|-Xlint:all||g' {} + 2>/dev/null || true
 find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} + 2>/dev/null || true
 
 # =========================================================================
