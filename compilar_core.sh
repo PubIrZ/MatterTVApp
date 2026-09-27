@@ -89,16 +89,36 @@ echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado!"
 # TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++) BLINDADO
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
-NDK_PATH="/opt/android/android-ndk-r25c"
+
+# Autodetección dinámica del path del NDK en entornos de CI (GitHub Actions)
+if [ -n "$ANDROID_NDK_HOME" ] && [ -d "$ANDROID_NDK_HOME" ]; then
+    NDK_PATH="$ANDROID_NDK_HOME"
+elif [ -n "$ANDROID_NDK_LATEST_HOME" ] && [ -d "$ANDROID_NDK_LATEST_HOME" ]; then
+    NDK_PATH="$ANDROID_NDK_LATEST_HOME"
+elif [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
+    NDK_PATH="$ANDROID_NDK_ROOT"
+elif [ -d "/usr/local/lib/android/sdk/ndk-bundle" ]; then
+    NDK_PATH="/usr/local/lib/android/sdk/ndk-bundle"
+else
+    # Intento de encontrarlo buscando el subdirectorio toolchains en ubicaciones conocidas
+    NDK_PATH=$(find /usr/local/lib/android /opt/android /home/runner/android -name "toolchains" -type d -print -quit 2>/dev/null | sed 's|/toolchains||')
+fi
+
+if [ -z "$NDK_PATH" ] || [ ! -d "$NDK_PATH" ]; then
+    echo "CRITICAL ERROR: No se pudo localizar la raíz de instalación del NDK."
+    exit 1
+fi
+
 export ANDROID_NDK_ROOT="$NDK_PATH"
 export ANDROID_NDK_HOME="$NDK_PATH"
+echo "INFRA: NDK Raíz resuelto en: $NDK_PATH"
 
 TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
 TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
 mkdir -p "$TARGET_STL_DIR_32" "$TARGET_STL_DIR_64"
 
-REAL_SO_32="/opt/android/android-ndk-r25c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
-REAL_SO_64="/opt/android/android-ndk-r25c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
+REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
 
 rm -f "$TARGET_STL_DIR_32/libc++_shared.so"
 rm -f "$TARGET_STL_DIR_64/libc++_shared.so"
