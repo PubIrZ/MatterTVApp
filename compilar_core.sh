@@ -111,6 +111,25 @@ ln -sf "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
 echo "SUCCESS: Enlaces simbólicos cruzados inyectados mediante punteros puros."
 
 # =========================================================================
+# ¡EL HACK DE COMPATIBILIDAD PARA EL COMPILADOR CLANG (API 24 BYPASS)!
+# Recreamos los ejecutables fantasma vinculándolos al compilador nativo del NDK
+# =========================================================================
+echo "INFRA: Parchando enlaces simbólicos de ejecutables Clang en el NDK..."
+BIN_NDK_DIR="/opt/android/android-ndk-r25c/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+# Creamos puentes forzados para engañar a los scripts de Matter de 32 bits
+ln -sf "$BIN_NDK_DIR/armv7a-linux-androideabi26-clang" "$BIN_NDK_DIR/armv7a-linux-androideabi24-clang"
+ln -sf "$BIN_NDK_DIR/armv7a-linux-androideabi26-clang++" "$BIN_NDK_DIR/armv7a-linux-androideabi24-clang++"
+
+# Creamos puentes de respaldo preventivos para la variante de 64 bits por si acaso
+ln -sf "$BIN_NDK_DIR/aarch64-linux-android26-clang" "$BIN_NDK_DIR/aarch64-linux-android24-clang"
+ln -sf "$BIN_NDK_DIR/aarch64-linux-android26-clang++" "$BIN_NDK_DIR/aarch64-linux-android24-clang++"
+echo "SUCCESS: ¡Puentes de compatibilidad de ejecutables Clang inyectados!"
+
+
+
+
+# =========================================================================
 # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS
 # =========================================================================
 echo "INFRA: Removiendo flags estrictos de las plantillas fuentes BUILD.gn y .gni..."
