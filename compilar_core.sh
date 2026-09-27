@@ -127,34 +127,41 @@ find out/ -name "*.ninja" -exec sed -i 's|-Xlint:all||g' {} + 2>/dev/null || tru
 find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} + 2>/dev/null || true
 
 # =========================================================================
-# COMPILACIÓN MAESTRA INCREMENTAL CON NINJA (CONSTRAINTS DE MEMORIA JVM)
+# COMPILACIÓN MAESTRA INCREMENTAL CON NINJA (LOG CAPTURE PRO)
 # =========================================================================
-echo "INFRA: Configurando topes de memoria JVM para evitar caídas por RAM (OOM)..."
-
-# Limitamos la memoria máxima de cualquier proceso Java/Kotlin lanzado en el búnker
+echo "INFRA: Configurando topes de memoria JVM para evitar caídas por RAM..."
 export _JAVA_OPTIONS="-Xmx2048m -Xms512m"
 export GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx2048m"
 export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 
-echo "INFRA: Ejecutando Ninja. El búnker procesará la compilación de forma segura..."
+echo "INFRA: Ejecutando Ninja..."
 set +e
-# Ejecutamos el build principal de Ninja
 ninja -C out/android-arm-tv-server
 
-# Si vuelve a fallar, obligamos a Ninja a imprimir absolutamente toda la salida latente
 if [ $? -ne 0 ]; then
     echo "========================================================================="
-    echo "🚨 CAPTURANDO LOG DE TRACE ABSOLUTO CON RE-EJECUCIÓN INMEDIATA 🚨"
+    echo "🚨 CAPTURANDO LOG DE TRACE ABSOLUTO CON EXTRACCIÓN DIRECTA DE NINJA 🚨"
     echo "========================================================================="
     
-    # Limpiamos únicamente el sello del paso corrupto para obligar a re-ejecutarlo de verdad
-    rm -f out/android-arm-tv-server/obj/third_party/connectedhomeip/src/controller/java/tlv__kotlinc.stamp
+    # Buscamos la línea exacta de ejecución del comando que falló dentro de la base de datos de Ninja
+    set +e
+    RAW_COMMAND=$(ninja -C out/android-arm-tv-server -t commands third_party/connectedhomeip/src/controller/java:tlv__kotlinc | head -n 1)
+    set -e
     
-    # Ejecutamos Ninja de nuevo en modo explicativo global (-d keeprsp) filtrando el output
-    ninja -C out/android-arm-tv-server -v -j 1 third_party/connectedhomeip/src/controller/java:tlv__kotlinc
+    if [ -n "$RAW_COMMAND" ]; then
+        echo "INFRA: Ejecutando comando extraído manualmente fuera de Ninja:"
+        echo "$RAW_COMMAND"
+        echo "-------------------------------------------------------------------------"
+        # Ejecutamos el comando en crudo directamente en la consola para ver los errores reales
+        eval "$RAW_COMMAND"
+    else
+        echo "WARNING: No se pudo extraer el comando individual. Imprimiendo versión de Java de respaldo..."
+        java -version || true
+    fi
     
     exit 1
 fi
 set -e
+
 
 
