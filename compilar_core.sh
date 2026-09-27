@@ -126,6 +126,13 @@ echo "INFRA: Asegurando estructura de directorios para de artefactos ZAP..."
 rm -rf zzz_generated
 mkdir -p zzz_generated/app-common/app-common/zap-generated/attributes/
 
+# Estructuramos la ruta destino intermedia asegurando limpieza profunda recursiva
+mkdir -p examples/tv-app/android/third_party/connectedhomeip/
+rm -rf examples/tv-app/android/third_party/connectedhomeip/zzz_generated
+
+# Creamos el enlace simbólico maestro apuntando a la raíz del espacio de trabajo
+ln -sf /workspace/zzz_generated examples/tv-app/android/third_party/connectedhomeip/zzz_generated
+
 # Mapeo de enlace simbólico crítico para el subdirectorio de compilación de la app de TV
 mkdir -p examples/tv-app/android/third_party/connectedhomeip/
 rm -f examples/tv-app/android/third_party/connectedhomeip/zzz_generated
