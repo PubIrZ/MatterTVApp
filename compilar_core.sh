@@ -1,18 +1,22 @@
 #!/bin/bash
 # =========================================================================
-# SCRIPT MAESTRO DE COMPILACIÓN - MATTER 1.3 (SDK 26 / NDK R23C)
+# SCRIPT MAESTRO DE COMPILACIÓN DEFINTIVO - MATTER 1.3
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
 # =========================================================================
-# PARTE 1: LIMPIEZA TOTAL Y PRE-REQUISITOS DEL ENTORNO
+# PARTE 1: LIMPIEZA ABSOLUTA DE ENTORNO (ANTI-LOOPS)
 # =========================================================================
+echo "INFRA: Rompiendo y purgando cualquier residuo cíclico de compilaciones previas..."
 
-echo "INFRA: Purgando directorios antiguos para inicializar un entorno 100% limpio..."
-# Limpiamos out/ (caché de Ninja) y zzz_generated/ (fuentes de ZAP) para evitar contaminación
-rm -rf out/
-rm -rf zzz_generated/
-rm -rf examples/tv-app/android/third_party/connectedhomeip/zzz_generated/
+# Forzamos la remoción de enlaces y directorios usando comodines absolutos
+unlink zzz_generated 2>/dev/null || true
+rm -rf out/ zzz_generated/
+
+# Limpieza quirúrgica de la ruta conflictiva para evitar errores de loops simbólicos
+set +e
+find . -name "zzz_generated" -exec rm -rf {} + 2>/dev/null
+set -e
 
 # Limpiador maestro de saltos de línea de Windows (CRLF a LF)
 sed -i 's/\r$//' "$0" || true
@@ -37,7 +41,7 @@ export ANDROID_HOME="/usr/local/lib/android/sdk"
 export ANDROID_NDK_HOME="/opt/android/android-ndk-r23c"
 export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
 
-# Validamos la existencia física de la plataforma SDK 26 para sdkmanager
+# Validamos la existencia física de la plataforma SDK 26 para las licencias de sdkmanager
 if [ ! -d "$ANDROID_HOME/platforms/android-26" ]; then
     echo "INFRA: Estructurando plataforma del SDK 26..."
     TARGET_PLATFORM_DIR="$ANDROID_HOME/platforms/android-26"
@@ -103,8 +107,8 @@ echo "INFRA: Removiendo flags estrictos de las plantillas fuentes BUILD.gn y .gn
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror",||g' {} + 2>/dev/null || true
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"||g' {} + 2>/dev/null || true
 
-# Corrección de sed: Patrón acotado por comillas seguras (evita corrupción del árbol de fuentes)
-find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
+# Corrección definitiva de sed: Patrón limpio acotado por comillas válidas de GN
+find .type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*"||g' {} + 2>/dev/null || true
 
 echo "INFRA: Inyectando inhibidores de error '-nowarn' en el motor de Pigweed (kotlinc)..."
@@ -112,31 +116,41 @@ export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 
-echo "INFRA: Estructurando directorios físicos reales para evitar bucles de enlaces..."
-TARGET_ZAP_DIR="examples/tv-app/android/third_party/connectedhomeip/zzz_generated/app-common/app-common/zap-generated/attributes"
-mkdir -p "$TARGET_ZAP_DIR"
-
+# =========================================================================
+# SINCRONIZACIÓN GN NAT_IVA (Crea la estructura out/ de forma limpia primero)
+# =========================================================================
 echo "INFRA: Sincronizando árbol estructural de GN limpio..."
 gn gen out/android-arm-tv-server \
   --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
 
-echo "INFRA: Invocando generador zap-cli con plantilla de servidor nativa (Resuelve Accessors.cpp)..."
+# =========================================================================
+# GENERACIÓN DE CÓDIGO NATIVA DE ATRIBUTOS (ZAP)
+# =========================================================================
+echo "INFRA: Invocando la pre-generación física de código ZAP para TV-App..."
+
+# Forzamos la creación del destino exacto que GN mapeó para la compilación JNI
+AUTO_GEN_PATH="examples/tv-app/android/third_party/connectedhomeip/zzz_generated/app-common/app-common/zap-generated/attributes"
+mkdir -p "$AUTO_GEN_PATH"
+
 set +e
-# Forzamos la creación de fuentes usando el ID de paquete nativo de Matter
+# Ejecutamos zap-cli apuntando a la plantilla nativa validada por Matter
 zap-cli generate examples/tv-app/tv-common/tv-app.zap \
   -t src/app/zap-templates/matter-idl-server.json \
-  -o "$TARGET_ZAP_DIR/../" || true
+  -o "$AUTO_GEN_PATH/../" || true
 
-# Resguardo secundario: Copiamos la salida real generada a la raíz para mapeos JNI globales
+# Duplicamos la salida a la raíz para resolver accesos globales del core
 mkdir -p zzz_generated/app-common/app-common/zap-generated/attributes/
 cp -r examples/tv-app/android/third_party/connectedhomeip/zzz_generated/* zzz_generated/ || true
 set -e
 
-echo "INFRA: Purgando residuos de flags de los artefactos generados por GN..."
+# =========================================================================
+# PURGA DE ARTEFACTOS POST-GN Y COMPILACIÓN
+# =========================================================================
+echo "INFRA: Purgando residuos de flags de los artefactos generados..."
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation",||g' {} +
 find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} +
 
-echo "INFRA: ¡Entorno asegurado! Lanzando Ninja bajo el nivel de API nativo 24 del proyecto..."
+echo "INFRA: ¡Estructura asegurada! Lanzando Ninja de manera incremental..."
 ninja -C out/android-arm-tv-server
