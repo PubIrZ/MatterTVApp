@@ -86,7 +86,7 @@ export PATH="/usr/local/bin:$PATH"
 echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado!"
 
 # =========================================================================
-# PARTE 2: ASIGNACIÓN DE BINARIOS AL PATH (CLANG & KOTLINC) Y COMPILACIÓN
+# PARTE 2: MAPEADO DE BINARIOS, INTERCEPCIÓN DE CLANG Y COMPILACIÓN
 # =========================================================================
 
 STATIC_BIN_DIR="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
@@ -100,6 +100,35 @@ if [ -n "$KOTLINC_PATH" ]; then
     KOTLINC_DIR=$(dirname "$KOTLINC_PATH")
     export PATH="$KOTLINC_DIR:$PATH"
     echo "INFRA: kotlinc inyectado al PATH desde: $KOTLINC_DIR"
+fi
+
+# =========================================================================
+# ¡EL TRUCO CRÍTICO! WRAPPER PARA INTERCEPTAR EL COMPILADOR API 24
+# =========================================================================
+if [ -d "$STATIC_BIN_DIR" ]; then
+    echo "INFRA: Inyectando interceptor de preprocesador para solucionar ifaddrs..."
+    
+    # Localizamos los ejecutables binarios reales (no modificados) dentro del directorio
+    BASE_CLANG_32=$(find "$STATIC_BIN_DIR" -name "armv7a-linux-androideabi*-clang" -type f -not -name "*24*" -print -quit | head -n 1)
+    BASE_CLANGXX_32=$(find "$STATIC_BIN_DIR" -name "armv7a-linux-androideabi*-clang++" -type f -not -name "*24*" -print -quit | head -n 1)
+
+    # Si por alguna razón la búsqueda anterior es ambigua, usamos la llamada directa Clang por defecto del NDK
+    [ -z "$BASE_CLANG_32" ] && BASE_CLANG_32="$STATIC_BIN_DIR/clang"
+    [ -z "$BASE_CLANGXX_32" ] && BASE_CLANGXX_32="$STATIC_BIN_DIR/clang++"
+
+    # Eliminamos el enlace anterior para evitar loops de llamadas infinitos
+    rm -f "$STATIC_BIN_DIR/armv7a-linux-androideabi24-clang" "$STATIC_BIN_DIR/armv7a-linux-androideabi24-clang++"
+
+    # Inyectamos el puente script ejecutable para interceptar llamadas C
+    echo '#!/bin/bash' > "$STATIC_BIN_DIR/armv7a-linux-androideabi24-clang"
+    echo "exec $BASE_CLANG_32 -D__ANDROID_API__=26 \"\$@\"" >> "$STATIC_BIN_DIR/armv7a-linux-androideabi24-clang"
+    
+    # Inyectamos el puente script ejecutable para interceptar llamadas C++ (Resuelve InetInterface.cpp)
+    echo '#!/bin/bash' > "$STATIC_BIN_DIR/armv7a-linux-androideabi24-clang++"
+    echo "exec $BASE_CLANGXX_32 -D__ANDROID_API__=26 \"\$@\"" >> "$STATIC_BIN_DIR/armv7a-linux-androideabi24-clang++"
+
+    chmod +x "$STATIC_BIN_DIR"/armv7a-linux-androideabi24-clang*
+    echo "SUCCESS: Wrappers de compilación cruzada aplicados con éxito."
 fi
 
 # =========================================================================
@@ -127,16 +156,12 @@ find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call
 find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
 # =========================================================================
-# SINCRONIZACIÓN GN - CORRECCIÓN DE LA VARIABLE NATIVA A android_target_api_level
+# SINCRONIZACIÓN GN ESTÁNDAR
 # =========================================================================
-echo "INFRA: Sincronizando árbol estructural de GN (Fijando android_target_api_level a 26)..."
+echo "INFRA: Sincronizando árbol estructural de GN..."
 gn gen out/android-arm-tv-server \
-  --args='target_os="android" target_cpu="arm" android_target_api_level=26 android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
+  --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
-
-# Doble capa de seguridad: Forzamos la bandera de la API global directo en las llamadas generadas
-echo "INFRA: Modificando banderas de preprocesador en Ninja para asegurar compatibilidad de red..."
-find out/ -name "*.ninja" -exec sed -i 's|-DCHIP_HAVE_CONFIG_H=1|-DCHIP_HAVE_CONFIG_H=1 -D__ANDROID_API__=26|g' {} +
 
 echo "INFRA: Purgando flags incompatibles de Kotlin (-Xlint) de los artefactos de Ninja..."
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
@@ -144,5 +169,6 @@ find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation",||g' {} +
 find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation"||g' {} +
 find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} +
 
-echo "INFRA: Ninja reanudará la compilación utilizando las especificaciones de la API 26..."
+echo "INFRA: Ninja reanudará la compilación utilizando interceptores a nivel de Toolchain..."
 ninja -C out/android-arm-tv-server
+
