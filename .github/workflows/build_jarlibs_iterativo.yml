@@ -161,6 +161,7 @@ jobs:
             
             # Entramos a la carpeta aislada del SDK de Matter para ejecutar el script nativamente
             cd matter-sdk
+            ls -al *.sh
             chmod +x compilar_core_build_jarlib.sh
 
             # Ejecutamos tu script de compilación nativo directo en el host sin capas intermedias.
