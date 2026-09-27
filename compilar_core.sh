@@ -1,6 +1,6 @@
 #!/bin/bash
 # =========================================================================
-# SCRIPT DINÁMICO DE COMPILACIÓN - BYPASS TOTAL DE WARNINGS DE KOTLIN
+# PARTE 1: SCRIPT DINÁMICO DE COMPILACIÓN - REQUISITOS SDK 26 / NDK R23C
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
@@ -32,27 +32,31 @@ echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
 # =========================================================================
-# TRUCO MAESTRO 1: RE-INYECTAMOS TU ANDROID.JAR (API 26) EM_PARETADA
+# ASIGNACIÓN DE ENTORNO DE COMPILACIÓN OFICIAL (SDK 26 & NDK R23C)
 # =========================================================================
-echo "INFRA: Descargando el archivo original android.jar (API 26) usando variables seguras..."
-TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
-mkdir -p "$TARGET_PLATFORM_DIR"
+echo "=== CONFIGURANDO PASARELAS DEL SDK NATIVO DEL DOCKER ==="
+export ANDROID_HOME="/usr/local/lib/android/sdk"
+export ANDROID_NDK_HOME="/opt/android/android-ndk-r23c"
+export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
 
-PATH_platform26="com/android/repository/platform-26_r02.zip"
-URL_google="dl.google."
-URL_google="https://${URL_google}${PATH_platform26}"
-
-curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
-
-mkdir -p temp_extracted
-unzip -o -q platform26.zip -d temp_extracted/
-
-REAL_JAR_PATH=$(find temp_extracted/ -name "android.jar" -type f -print -quit 2>/dev/null)
-if [ -n "$REAL_JAR_PATH" ]; then
-    mv "$REAL_JAR_PATH" "$TARGET_PLATFORM_DIR/android.jar"
+# Validamos la existencia física de los requisitos exigidos para las licencias
+if [ ! -d "$ANDROID_HOME/platforms/android-26" ]; then
+    echo "INFRA: Estructurando plataforma del SDK 26..."
+    TARGET_PLATFORM_DIR="$ANDROID_HOME/platforms/android-26"
+    mkdir -p "$TARGET_PLATFORM_DIR"
+    
+    PATH_platform26="com/android/repository/platform-26_r02.zip"
+    URL_google="https://dl.google.${PATH_platform26}"
+    curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
+    
+    mkdir -p temp_extracted
+    unzip -o -q platform26.zip -d temp_extracted/
+    REAL_JAR_PATH=$(find temp_extracted/ -name "android.jar" -type f -print -quit 2>/dev/null)
+    if [ -n "$REAL_JAR_PATH" ]; then
+        mv "$REAL_JAR_PATH" "$TARGET_PLATFORM_DIR/android.jar"
+    fi
+    rm -rf temp_extracted platform26.zip
 fi
-rm -rf temp_extracted platform26.zip
-echo "SUCCESS: Archivo maestro android.jar (API 26) inyectado."
 
 echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
 python3 third_party/android_deps/set_up_android_deps.py
@@ -77,90 +81,25 @@ ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
 ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap
 chmod +x /usr/local/bin/zap*
 
-if [ -f "scripts/setup/zap.json" ]; then 
-    echo '{"packages": []}' > scripts/setup/zap.json
-fi
-
 export ZAP_INSTALL_PATH="/usr/local/bin"
 export PATH="/usr/local/bin:$PATH"
 echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado!"
 
 # =========================================================================
-# TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++) BLINDADO
+# PARTE 2: ASIGNACIÓN DE BINARIOS AL PATH (CLANG & KOTLINC) Y COMPILACIÓN
 # =========================================================================
-echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
 
-if [ -n "$ANDROID_NDK_HOME" ] && [ -d "$ANDROID_NDK_HOME" ]; then
-    NDK_PATH="$ANDROID_NDK_HOME"
-elif [ -n "$ANDROID_NDK_LATEST_HOME" ] && [ -d "$ANDROID_NDK_LATEST_HOME" ]; then
-    NDK_PATH="$ANDROID_NDK_LATEST_HOME"
-elif [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
-    NDK_PATH="$ANDROID_NDK_ROOT"
-elif [ -d "/usr/local/lib/android/sdk/ndk-bundle" ]; then
-    NDK_PATH="/usr/local/lib/android/sdk/ndk-bundle"
-else
-    NDK_PATH=$(find /usr/local/lib/android /opt/android /home/runner/android -name "toolchains" -type d -print -quit 2>/dev/null | sed 's|/toolchains||')
-fi
-
-if [ -z "$NDK_PATH" ] || [ ! -d "$NDK_PATH" ]; then
-    echo "CRITICAL ERROR: No se pudo localizar la raíz de instalación del NDK."
-    exit 1
-fi
-
-export ANDROID_NDK_ROOT="$NDK_PATH"
-export ANDROID_NDK_HOME="$NDK_PATH"
-echo "INFRA: NDK Raíz resuelto en: $NDK_PATH"
-
-TARGET_STL_DIR_32="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
-TARGET_STL_DIR_64="$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/arm64-v8a"
-mkdir -p "$TARGET_STL_DIR_32" "$TARGET_STL_DIR_64"
-
-REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
-REAL_SO_64="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
-
-rm -f "$TARGET_STL_DIR_32/libc++_shared.so"
-rm -f "$TARGET_STL_DIR_64/libc++_shared.so"
-
-ln -sf "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
-ln -sf "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
-echo "SUCCESS: Enlaces simbólicos cruzados inyectados mediante punteros puros."
-
-# =========================================================================
-# ¡EL HACK DE COMPATIBILIDAD DINÁMICO PARA EL COMPILADOR CLANG (API 24 BYPASS)!
-# =========================================================================
-echo "INFRA: Localizando de forma automática el directorio de binarios de Clang..."
-
-STATIC_BIN_DIR="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
+STATIC_BIN_DIR="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 if [ -d "$STATIC_BIN_DIR" ]; then
-    BIN_NDK_DIR="$STATIC_BIN_DIR"
-else
-    set +e
-    REAL_BIN_DIR=$(find "$NDK_PATH/toolchains" -type f -name "clang++" -print -quit 2>/dev/null)
-    set -e
-    if [ -n "$REAL_BIN_DIR" ]; then
-        BIN_NDK_DIR=$(dirname "$REAL_BIN_DIR")
-    fi
+    export PATH="$STATIC_BIN_DIR:$PATH"
 fi
 
-if [ -n "$BIN_NDK_DIR" ] && [ -d "$BIN_NDK_DIR" ]; then
-    echo "INFRA: Directorio de compilación cruzada localizado en: $BIN_NDK_DIR"
-    export PATH="$BIN_NDK_DIR:$PATH"
-    
-    BASE_CLANG_32=$(find "$BIN_NDK_DIR" -name "armv7a-linux-androideabi*-clang" -type f -print -quit | head -n 1)
-    BASE_CLANGXX_32=$(find "$BIN_NDK_DIR" -name "armv7a-linux-androideabi*-clang++" -type f -print -quit | head -n 1)
-    BASE_CLANG_64=$(find "$BIN_NDK_DIR" -name "aarch64-linux-android*-clang" -type f -print -quit | head -n 1)
-    BASE_CLANGXX_64=$(find "$BIN_NDK_DIR" -name "aarch64-linux-android*-clang++" -type f -print -quit | head -n 1)
-
-    echo "INFRA: Inyectando enlaces de compatibilidad API 24 basados en objetos reales..."
-    ln -sf "$BASE_CLANG_32" "$BIN_NDK_DIR/armv7a-linux-androideabi24-clang"
-    ln -sf "$BASE_CLANGXX_32" "$BIN_NDK_DIR/armv7a-linux-androideabi24-clang++"
-    ln -sf "$BASE_CLANG_64" "$BIN_NDK_DIR/aarch64-linux-android24-clang"
-    ln -sf "$BASE_CLANGXX_64" "$BIN_NDK_DIR/aarch64-linux-android24-clang++"
-    echo "SUCCESS: ¡Puentes de compatibilidad de ejecutables Clang inyectados!"
-else
-    echo "CRITICAL ERROR: No se pudo localizar la carpeta de ejecutables binarios del NDK."
-    exit 1
+# Buscamos de forma automatizada kotlinc dentro del entorno aislado de Pigweed
+KOTLINC_PATH=$(find .environment/ -name "kotlinc" -type f -print -quit 2>/dev/null)
+if [ -n "$KOTLINC_PATH" ]; then
+    KOTLINC_DIR=$(dirname "$KOTLINC_PATH")
+    export PATH="$KOTLINC_DIR:$PATH"
+    echo "INFRA: kotlinc inyectado al PATH desde: $KOTLINC_DIR"
 fi
 
 # =========================================================================
@@ -187,17 +126,20 @@ export KOTLINC_ARGS="-nowarn"
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
-echo "INFRA: Sincronizando árbol estructural de GN..."
+# =========================================================================
+# SINCRONIZACIÓN GN - FIJANDO EL PARÁMETRO DE API EXIGIDO POR EL SDK (API 26)
+# =========================================================================
+echo "INFRA: Sincronizando árbol estructural de GN (Fijando target_api_level a 26)..."
 gn gen out/android-arm-tv-server \
-  --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
+  --args='target_os="android" target_cpu="arm" android_api_level=26 android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
 
-# Neutralización total post-GN en archivos JSON y manifiestos de Ninja (.ninja)
 echo "INFRA: Purgando flags incompatibles de Kotlin (-Xlint) de los artefactos de Ninja..."
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation",||g' {} +
 find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation"||g' {} +
 find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} +
 
-echo "INFRA: Ninja reanudará la compilación de forma incremental..."
+echo "INFRA: Ninja reanudará la compilación utilizando las especificaciones de la API 26..."
 ninja -C out/android-arm-tv-server
+
