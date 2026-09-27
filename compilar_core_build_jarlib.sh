@@ -4,6 +4,16 @@
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
+# 🚀 FORZAR USO DE JAVA 11 PARA EVITAR EL ERROR "major version 61"
+POSIBLE_JAVA_11=$(find /opt/hostedtoolcache/Java_Zulu_jdk/ -maxdepth 2 -name "11.*" | head -n 1)
+if [ -n "$POSIBLE_JAVA_11" ]; then
+    export JAVA_HOME="$POSIBLE_JAVA_11/x64"
+    export PATH="$JAVA_HOME/bin:$PATH"
+fi
+
+echo "INFRA: Ajustando entorno a $(java -version 2>&1 | head -n 1)"
+
+
 # =========================================================================
 # ¡EL LIMPIADOR MAESTRO DE SALTOS DE LÍNEA DE WINDOWS (CRLF a LF)!
 # =========================================================================
