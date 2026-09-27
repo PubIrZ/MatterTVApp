@@ -34,8 +34,7 @@ export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
 export PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
 
 # =========================================================================
-# ¡EL TRUCO MAESTRO REINTEGRADO: INYECCIÓN DE PLATFORMS/ANDROID-26!
-# Satisface el requerimiento físico de 'lib/android.jar' sin romper caché.
+# ¡INYECTAMOS PLATFORMS/ANDROID-26 SI FALTA!
 # =========================================================================
 TARGET_PLATFORM_DIR="$ANDROID_HOME/platforms/android-26"
 if [ ! -f "$TARGET_PLATFORM_DIR/android.jar" ]; then
@@ -53,9 +52,26 @@ if [ ! -f "$TARGET_PLATFORM_DIR/android.jar" ]; then
     REAL_JAR_PATH=$(find temp_extracted/ -name "android.jar" -type f -print -quit 2>/dev/null)
     if [ -n "$REAL_JAR_PATH" ]; then
         mv "$REAL_JAR_PATH" "$TARGET_PLATFORM_DIR/android.jar"
-        echo "SUCCESS: Archivo maestro android.jar (API 26) inyectado en el SDK nativo."
+        echo "SUCCESS: Archivo maestro android.jar (API 26) inyectado."
     fi
     rm -rf temp_extracted platform26.zip
+fi
+
+echo "INFRA: Descargando pre-requisitos de dependencias de Android..."
+python3 third_party/android_deps/set_up_android_deps.py
+third_party/java_deps/set_up_java_deps.sh
+
+# =========================================================================
+# ¡EL TRUCO MAESTRO DE SUBSANACIÓN DE ARTEFACTOS DEPENDIENTES (ANDROID_DEPS)!
+# Sincroniza las dependencias Maven descargadas hacia el espejo secundario del subproyecto
+# =========================================================================
+echo "INFRA: Sincronizando artefactos jar/aar hacia el árbol de dependencias del subproyecto..."
+MIRROR_DEPS_PATH="examples/tv-app/android/third_party/connectedhomeip/third_party/android_deps"
+mkdir -p "$MIRROR_DEPS_PATH"
+
+if [ -d "third_party/android_deps/artifacts" ]; then
+    cp -rf third_party/android_deps/artifacts "$MIRROR_DEPS_PATH/"
+    echo "SUCCESS: Artefactos .jar/.aar replicados exitosamente para evitar caídas de Ninja."
 fi
 
 # =========================================================================
@@ -65,18 +81,10 @@ echo "INFRA: Desactivando alertas estrictas y flags de linter incompatibles con 
 export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
 
-# Inyectamos el inhibidor de alertas en el ejecutable intermedio de Pigweed
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 
-# Eliminamos banderas estrictas -Werror de las plantillas para evitar caídas por warnings tipográficos
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror",||g' {} + 2>/dev/null || true
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"||g' {} + 2>/dev/null || true
-
-# =========================================================================
-# PUNTO DE LIMPIEZA SEGURO (MANTENER COMENTADO SALVO NECESIDAD DE RECONSTRUCCIÓN)
-# =========================================================================
-# gn clean out/android-arm-tv-server
-# =========================================================================
 
 # =========================================================================
 # GENERACIÓN DE ENTORNO GN (Alineado con los fuentes nativos de la rama v1.3)
