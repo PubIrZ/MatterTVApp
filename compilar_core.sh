@@ -90,7 +90,6 @@ echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado!"
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
 
-# Autodetección dinámica del path del NDK en entornos de CI (GitHub Actions)
 if [ -n "$ANDROID_NDK_HOME" ] && [ -d "$ANDROID_NDK_HOME" ]; then
     NDK_PATH="$ANDROID_NDK_HOME"
 elif [ -n "$ANDROID_NDK_LATEST_HOME" ] && [ -d "$ANDROID_NDK_LATEST_HOME" ]; then
@@ -100,7 +99,6 @@ elif [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
 elif [ -d "/usr/local/lib/android/sdk/ndk-bundle" ]; then
     NDK_PATH="/usr/local/lib/android/sdk/ndk-bundle"
 else
-    # Intento de encontrarlo buscando el subdirectorio toolchains en ubicaciones conocidas
     NDK_PATH=$(find /usr/local/lib/android /opt/android /home/runner/android -name "toolchains" -type d -print -quit 2>/dev/null | sed 's|/toolchains||')
 fi
 
@@ -174,10 +172,10 @@ find . -name "BUILD.gn" -exec sed -i 's|"-Werror"||g' {} +
 find . -name "*.gni" -exec sed -i 's|"-Werror",||g' {} +
 find . -name "*.gni" -exec sed -i 's|"-Werror"||g' {} +
 
-find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all",||g' {} +
-find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all"||g' {} +
-find . -name "*.gni" -exec sed -i 's|"-Xlint:all",||g' {} +
-find . -name "*.gni" -exec sed -i 's|"-Xlint:all"||g' {} +
+find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:[^顶]*",||g' {} + 2>/dev/null || true
+find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:[^顶]*"||g' {} + 2>/dev/null || true
+find . -name "*.gni" -exec sed -i 's|"-Xlint:[^顶]*",||g' {} + 2>/dev/null || true
+find . -name "*.gni" -exec sed -i 's|"-Xlint:[^顶]*"||g' {} + 2>/dev/null || true
 
 # =========================================================================
 # ANULACIÓN COMPLETA EN EL MOTOR DE PIGWEED (KOTLINC)
@@ -194,7 +192,12 @@ gn gen out/android-arm-tv-server \
   --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
 
+# Neutralización total post-GN en archivos JSON y manifiestos de Ninja (.ninja)
+echo "INFRA: Purgando flags incompatibles de Kotlin (-Xlint) de los artefactos de Ninja..."
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
+find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation",||g' {} +
+find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation"||g' {} +
+find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} +
 
 echo "INFRA: Ninja reanudará la compilación de forma incremental..."
 ninja -C out/android-arm-tv-server
