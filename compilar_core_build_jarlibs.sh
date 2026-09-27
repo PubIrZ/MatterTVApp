@@ -1,5 +1,7 @@
 #!/bin/bash
 
+echo "INFRA DEBUG: La ruta de GITHUB_WORKSPACE detectada en este runner es: $GITHUB_WORKSPACE"
+exit 10
 #echo "🚨 MODO RESCATE ACTIVO: Saltando compilación y forzando subida inmediata del out (gh artifact upload)."
 #exit 10
 
@@ -71,3 +73,35 @@ find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 echo "INFRA: Ninja reanudará la compilación de forma incremental..."
 #ninja -C out/android-arm-tv-server
 ./scripts/build/build_examples.py --target android-arm-tv-server build
+
+# =========================================================================
+# 🚀 OPTIMIZACIÓN POST-COMPILACIÓN (LLVM-STRIP CON ENTORNO DINÁMICO DE BASH)
+# =========================================================================
+echo "========================================================================="
+echo "INFRA: Compilación completada. Generando copias '_small' para comparativa..."
+echo "========================================================================="
+
+## Usamos la ruta absoluta exacta basada en el Workspace real del host de GitHub
+#JNI_TARGET_DIR="/home/runner/work/MatterTVApp/MatterTVApp/matter-sdk/examples/tv-app/android/App/app/libs/jniLibs/armeabi-v7a"
+
+# $GITHUB_WORKSPACE apunta dinámicamente a /home/runner/work/MatterTVApp/MatterTVApp
+JNI_TARGET_DIR="$GITHUB_WORKSPACE/matter-sdk/examples/tv-app/android/App/app/libs/jniLibs/armeabi-v7a"
+STRIP_TOOL="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+
+if [ -f "$JNI_TARGET_DIR/libTvApp.so" ] && [ -x "$STRIP_TOOL" ]; then
+    echo "INFRA: Duplicando y reduciendo binarios nativos con llvm-strip..."
+    
+    # El parámetro -o clona y aplica el strip en el nuevo archivo sin alterar el original
+    $STRIP_TOOL --strip-unneeded "$JNI_TARGET_DIR/libTvApp.so" -o "$JNI_TARGET_DIR/libTvApp_small.so"
+    $STRIP_TOOL --strip-unneeded "$JNI_TARGET_DIR/libc++_shared.so" -o "$JNI_TARGET_DIR/libc++_shared_small.so"
+    
+    echo "========================================================================="
+    echo "📊 COMPARATIVA DE TAMAÑOS EN EL DISCO DEL RUNNER:"
+    echo "========================================================================="
+    ls -lh "$JNI_TARGET_DIR"/libTvApp*.so
+    ls -lh "$JNI_TARGET_DIR"/libc++_shared*.so
+    echo "========================================================================="
+else
+    echo "⚠️ ADVERTENCIA CRÍTICA: No se localizaron los binarios en la ruta exacta:"
+    echo "-> Buscado en: $JNI_TARGET_DIR/libTvApp.so"
+fi
