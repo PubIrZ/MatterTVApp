@@ -153,31 +153,35 @@ jobs:
             echo "INFRA NATIVA: Sincronizando script compilar_core_build_jarlib.sh y lanzando compilación..."
             echo "========================================================================="
             
-            # Volvemos a la raíz original, aseguramos que el script local modificado se mueva al SDK
-            cd ${{ github.workspace }}
-            cp -f compilar_core_build_jarlib.sh matter-sdk/
+            # Volvemos a la raíz utilizando la variable global e indestructible de GitHub Actions
+            cd "${{ github.workspace }}"
             
-            # Entramos a la carpeta aislada del SDK de Matter para ejecutar el script nativamente
-            cd matter-sdk
-            ls -al *.sh
-            chmod +x compilar_core_build_jarlib.sh
+            # Copiamos el script protegiendo el flujo (si falla el cp, no colapsa el job entero)
+            if cp -f compilar_core_build_jarlib.sh matter-sdk/ 2>/dev/null; then
+              # Entramos a la carpeta aislada del SDK de Matter para ejecutar el script nativamente
+              cd matter-sdk
+              ls -al *.sh
+              chmod +x compilar_core_build_jarlib.sh
 
-            # Ejecutamos tu script de compilación nativo directo en el host sin capas intermedias.
-            # Usamos '|| true' para capturar el fallo. Si falla, el script NO colapsa el Job nativo;
-            # entra de inmediato en el modo de espera interactivo por red.
-            if ./compilar_core_build_jarlib.sh; then
-              echo "SUCCESS: ¡Compilación nativa completada con éxito rotundo!"
-              break # Rompe el bucle infinito principal y pasa al paso final de subir los JARs
+              # Ejecutamos tu script de compilación nativo directo en el host
+              if ./compilar_core_build_jarlib.sh; then
+                echo "SUCCESS: ¡Compilación nativa completada con éxito rotundo!"
+                break # Rompe el bucle infinito principal y pasa al paso final de subir los JARs
+              else
+                echo "❌ ERROR: La compilación nativa ha fallado en algún punto del proceso."
+              fi
             else
-              echo "❌ ERROR: La compilación nativa ha fallado en algún punto del proceso."
-              echo "========================================================================="
-              echo "📡 MODO ESCUCHA NATIVO ACTIVO: Modifica compilar_core_build_jarlib.sh en tu PC y haz git push."
-              echo "La máquina virtual de GitHub se quedará esperando tus cambios en vivo..."
-              echo "========================================================================="
+              echo "❌ ERROR CRÍTICO: No se encontró 'compilar_core_build_jarlib.sh' en la raíz (${{ github.workspace }})."
+              echo "Asegúrate de que el nombre del archivo en tu PC coincide exactamente (mayúsculas/minúsculas)."
             fi
 
+            echo "========================================================================="
+            echo "📡 MODO ESCUCHA NATIVO ACTIVO: Modifica compilar_core_build_jarlib.sh en tu PC y haz git push."
+            echo "La máquina virtual de GitHub se quedará esperando tus cambios en vivo..."
+            echo "========================================================================="
+
             # Volvemos a la raíz del repositorio propio para poder escuchar las actualizaciones de Git
-            cd "$ORIGINAL_WORKSPACE_ROOT"
+            cd "${{ github.workspace }}"
 
             # BUCLE SECUNDARIO DE ESCUCHA POR RED (Monitorea cambios en GitHub cada 15 segundos)
             while true; do
@@ -201,6 +205,7 @@ jobs:
               fi
             done
           done
+
 
       # =========================================================================
       # EXTRACCIÓN Y SUBIDA AUTOMÁTICA DE LOS ARCHIVOS JAR DE CLASES
