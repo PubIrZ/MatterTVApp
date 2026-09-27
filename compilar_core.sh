@@ -7,14 +7,24 @@ set -e # Detiene el script inmediatamente ante cualquier fallo inesperado
 # Limpiador maestro de saltos de línea de Windows (CRLF a LF) por seguridad
 sed -i 's/\r$//' "$0" || true
 
-echo "=== NEUTRALIZANDO DEPENDENCIAS DE RED DE PIGWEED (ANTI-CIPD) ==="
-# Obligamos a Pigweed a saltarse las descargas de red e interactividad de CIPD
-export PW_CIPD_SKIP_BOOTSTRAP=1
-export PW_NO_CIPD_CACHE=1
+# =========================================================================
+# ¡EL PARCHE CLAVE AN_TI-CIPD DE CONFIGURACIÓN NEUTRALIZADA!
+# Esto evita que CIPD intente descargar ZAP por red y rompa el entorno en frío
+# =========================================================================
+echo "INFRA: Neutralizando configuraciones JSON rígidas de CIPD para ZAP..."
+if [ -f "scripts/setup/zap.json" ]; then
+    echo '{"packages": []}' > scripts/setup/zap.json
+fi
+find . -name "zap.json" -exec sh -c 'echo "{\"packages\": []}" > "{}"' \;
+
+echo "INFRA: Aplicando parche de compatibilidad Python 3.12 para TypeVar..."
+pip install --upgrade typing-extensions --quiet || true
+if [ -d ".environment/pigweed-venv" ]; then
+    .environment/pigweed-venv/bin/pip install --upgrade typing-extensions --quiet || true
+fi
 
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed en el búnker..."
-# Activamos el entorno nativo saltándonos cualquier descarga externa de Fuchsia/ZAP
-source scripts/activate.sh --skip-cipd
+source scripts/activate.sh
 
 echo "=== CONFIGURANDO VARIABLES DE ENTORNO NATIVAS DEL DOCKER ==="
 # En la imagen chip-build-android:126, el SDK y NDK ya están preinstalados en estas rutas
