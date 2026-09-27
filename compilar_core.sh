@@ -121,11 +121,15 @@ export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 
-# 5. CREACIÓN PREVENTIVA DEL ÁRBOL COMPLETO DE CÓDIGO GENERADO (Evita errores de directorio ausente)
-echo "INFRA: Asegurando estructura de directorios para artefactos ZAP..."
+# 5. CREACIÓN PREVENTIVA DEL ÁRBOL COMPLETO DE CÓDIGO GENERADO
+echo "INFRA: Asegurando estructura de directorios para de artefactos ZAP..."
+rm -rf zzz_generated
 mkdir -p zzz_generated/app-common/app-common/zap-generated/attributes/
-mkdir -p zzz_generated/tv-app/zap-generated/
-mkdir -p zzz_generated/placeholder/
+
+# Mapeo de enlace simbólico crítico para el subdirectorio de compilación de la app de TV
+mkdir -p examples/tv-app/android/third_party/connectedhomeip/
+rm -f examples/tv-app/android/third_party/connectedhomeip/zzz_generated
+ln -sf /workspace/zzz_generated examples/tv-app/android/third_party/connectedhomeip/zzz_generated
 
 # 6. Sincronizar árbol estructural de GN limpio
 echo "INFRA: Sincronizando árbol estructural de GN..."
@@ -133,15 +137,11 @@ gn gen out/android-arm-tv-server \
   --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
 
-# 7. EJECUCIÓN DEL MOTOR DE GENERACIÓN ZAP (Fuerza la creación de Accessors.cpp)
-echo "INFRA: Invocando generadores dinámicos ZAP en frío..."
+# 7. EJECUCIÓN DIRECTA DEL MOTOR DE ADAPTACIÓN ZAP COMPLETO
+echo "INFRA: Invocando generador ZAP nativo con plantilla de atributos para TV-App..."
 set +e
-# Intentamos que Ninja cree los archivos mediante las reglas de Matter
-ninja -C out/android-arm-tv-server third_party/connectedhomeip/examples/tv-app/tv-common:tv-common_zapgen_generate
-# Ejecutamos el script de Python nativo como respaldo directo sobre nuestra carpeta estructurada
-if [ -f "scripts/tools/zap/generate.py" ]; then
-    python3 scripts/tools/zap/generate.py examples/tv-app/tv-common/tv-app.zap -o zzz_generated/app-common/app-common/zap-generated/ || true
-fi
+# Corremos el motor zap-cli inyectando directamente la configuración de plantillas de la aplicación
+zap-cli generate examples/tv-app/tv-common/tv-app.zap -t src/app/zap-templates/app-templates.json -o zzz_generated/app-common/app-common/zap-generated/ || true
 set -e
 
 # 8. Purgar flags incompatibles que se hayan regenerado en los archivos finales de Ninja
@@ -153,3 +153,4 @@ find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} +
 # 9. Compilación Maestra Final
 echo "INFRA: Iniciando compilación incremental completa..."
 ninja -C out/android-arm-tv-server
+
