@@ -127,24 +127,34 @@ find out/ -name "*.ninja" -exec sed -i 's|-Xlint:all||g' {} + 2>/dev/null || tru
 find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} + 2>/dev/null || true
 
 # =========================================================================
-# COMPILACIÓN MAESTRA INCREMENTAL CON NINJA (MODO DIAGNÓSTICO)
+# COMPILACIÓN MAESTRA INCREMENTAL CON NINJA (CONSTRAINTS DE MEMORIA JVM)
 # =========================================================================
-echo "INFRA: Ejecutando Ninja. El búnker procesará la compilación de forma segura..."
+echo "INFRA: Configurando topes de memoria JVM para evitar caídas por RAM (OOM)..."
 
-# Habilitamos un atrapador de errores set +e para poder extraer los logs reales de tlv__kotlinc
+# Limitamos la memoria máxima de cualquier proceso Java/Kotlin lanzado en el búnker
+export _JAVA_OPTIONS="-Xmx2048m -Xms512m"
+export GRADLE_OPTS="-Dorg.gradle.jvmargs=-Xmx2048m"
+export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
+
+echo "INFRA: Ejecutando Ninja. El búnker procesará la compilación de forma segura..."
 set +e
+# Ejecutamos el build principal de Ninja
 ninja -C out/android-arm-tv-server
 
-# Si falla, forzamos a Ninja a ejecutar EXCLUSIVAMENTE ese subcomando en modo verbose
+# Si vuelve a fallar, obligamos a Ninja a imprimir absolutamente toda la salida latente
 if [ $? -ne 0 ]; then
     echo "========================================================================="
-    echo "🚨 CAPTURANDO LOG DE DIAGNÓSTICO EN ALTA DEFINICIÓN PARA KOTLINC 🚨"
+    echo "🚨 CAPTURANDO LOG DE TRACE ABSOLUTO CON RE-EJECUCIÓN INMEDIATA 🚨"
     echo "========================================================================="
     
-    # Forzamos la ejecución individual con -v para desvelar el error oculto en el terminal
-    ninja -C out/android-arm-tv-server -v third_party/connectedhomeip/src/controller/java:tlv__kotlinc
+    # Limpiamos únicamente el sello del paso corrupto para obligar a re-ejecutarlo de verdad
+    rm -f out/android-arm-tv-server/obj/third_party/connectedhomeip/src/controller/java/tlv__kotlinc.stamp
+    
+    # Ejecutamos Ninja de nuevo en modo explicativo global (-d keeprsp) filtrando el output
+    ninja -C out/android-arm-tv-server -v -j 1 third_party/connectedhomeip/src/controller/java:tlv__kotlinc
     
     exit 1
 fi
 set -e
+
 
