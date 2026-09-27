@@ -35,13 +35,15 @@ source scripts/activate.sh
 
 # =========================================================================
 # TRUCO MAESTRO 1: RE-INYECTAMOS TU ANDROID.JAR (API 26) EM_PARETADA
+# [DIRECCIÓN BLINDADA] Forzamos la URL explícita unificada apuntando a dl.google.com
 # =========================================================================
 echo "INFRA: Descargando el archivo original android.jar (API 26) usando variables seguras..."
 TARGET_PLATFORM_DIR="/usr/local/lib/android/sdk/platforms/android-26"
 mkdir -p "$TARGET_PLATFORM_DIR"
 
+# Token estricto sin desgloses en bucles que puedan heredar variables vacías o corruptas
 PATH_platform26="/android/repository/platform-26_r02.zip"
-URL_google="https://google.com${PATH_platform26}"
+URL_google="https://dl.google.com${PATH_platform26}"
 
 echo "INFRA: Conectando de forma directa al servidor de descargas: ${URL_google}"
 curl -L --retry 5 --retry-delay 5 --fail "$URL_google" -o platform26.zip
@@ -96,8 +98,6 @@ echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado de forma idéntica!"
 
 # =========================================================================
 # TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++) BLINDADO
-# Agregamos validaciones condicionales para evitar que cp intente copiar un
-# archivo sobre sí mismo si las rutas de origen y destino coinciden.
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
 set +e
@@ -128,7 +128,7 @@ FOUND_SO_64=$(find "$NDK_PATH/toolchains/llvm/prebuilt/" -name "libc++_shared.so
 set -e
 
 if [ -n "$FOUND_SO_32" ] && [ -n "$FOUND_SO_64" ]; then
-    # [BLINDAJE ANTI-MISMO_ARCHIVO] Solo ejecutamos cp si el origen y el destino son físicamente distintos
+    # Evitamos que se intente sobreescribir el mismo archivo físico
     if [ "$FOUND_SO_32" != "$SYSROOT_DIR_32/libc++_shared.so" ]; then
         cp -f "$FOUND_SO_32" "$SYSROOT_DIR_32/libc++_shared.so"
     fi
