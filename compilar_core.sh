@@ -86,10 +86,10 @@ export PATH="/usr/local/bin:$PATH"
 echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado!"
 
 # =========================================================================
-# PARTE 2: INYECCIÓN DE PATH, PARCHE DE COMPILADOR DE RED Y CONSTRUCCIÓN GN
+# PARTE 2: LIMPIEZA DE CACHÉ, ENRUTAMIENTO NAT_IVO Y COMPILACIÓN LIMPIA
 # =========================================================================
 
-# Aseguramos que la carpeta binaria del NDK esté expuesta nativamente
+# Exponemos de forma nativa los binarios del NDK r23c
 STATIC_BIN_DIR="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 if [ -d "$STATIC_BIN_DIR" ]; then
     export PATH="$STATIC_BIN_DIR:$PATH"
@@ -104,56 +104,43 @@ if [ -n "$KOTLINC_PATH" ]; then
 fi
 
 # =========================================================================
-# ¡EL TRUCO CRÍTICO! FORZAR RECONOCIMIENTO DE API EN LAS BANDERAS GLOBALES
+# ¡ELIMINACIÓN DE CACHÉ CORRUPTA! (Evita loops e inyecciones viejas de GN)
 # =========================================================================
-BUILD_CONFIG_ANDROID="build/config/android/BUILD.gn"
-if [ -f "$BUILD_CONFIG_ANDROID" ]; then
-    echo "INFRA: Inyectando macro de API 26 directamente en la plantilla de configuración de Android..."
-    # Buscamos la sección de flags del compilador e inyectamos la macro para sobreescribir __ANDROID_MIN_SDK_VERSION__
-    sed -i 's|cflags = \[|cflags = \[ "-D__ANDROID_API__=26",|g' "$BUILD_CONFIG_ANDROID"
-fi
+echo "INFRA: Purgando directorio de salida antiguo para asegurar un build limpio..."
+rm -rf out/android-arm-tv-server
+
 
 # =========================================================================
-# ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS
+# REMOCIÓN DE FLAGS ESTRICTOS (-Werror y -Xlint) EN FUENTES
 # =========================================================================
 echo "INFRA: Removiendo flags estrictos de las plantillas fuentes BUILD.gn y .gni..."
-find . -name "BUILD.gn" -exec sed -i 's|"-Werror",||g' {} +
-find . -name "BUILD.gn" -exec sed -i 's|"-Werror"||g' {} +
-find . -name "*.gni" -exec sed -i 's|"-Werror",||g' {} +
-find . -name "*.gni" -exec sed -i 's|"-Werror"||g' {} +
+find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror",||g' {} + 2>/dev/null || true
+find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"||g' {} + 2>/dev/null || true
 
-find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:[^顶]*",||g' {} + 2>/dev/null || true
-find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:[^顶]*"||g' {} + 2>/dev/null || true
-find . -name "*.gni" -exec sed -i 's|"-Xlint:[^顶]*",||g' {} + 2>/dev/null || true
-find . -name "*.gni" -exec sed -i 's|"-Xlint:[^顶]*"||g' {} + 2>/dev/null || true
+# Safe quote-bounded truncation pattern (prevents source tree corruption)
+find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
+find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*"||g' {} + 2>/dev/null || true
 
-# =========================================================================
-# ANULACIÓN COMPLETA EN EL MOTOR DE PIGWEED (KOTLINC)
-# =========================================================================
-echo "INFRA: Inyectando inhibidores de error '-nowarn' en el motor de Pigweed..."
+
+# Inhibición de advertencias de Kotlin en el motor de Pigweed
 export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
-
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
-find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
 # =========================================================================
-# SINCRONIZACIÓN GN - UTILIZANDO LA VARIABLE DE ENTORNO EXACTA DEL ARCHIVO GNI
+# GENERACIÓN DE CONFIGURACIÓN NATIVA (API 24 AUTOMÁTICA)
 # =========================================================================
-echo "INFRA: Sincronizando árbol estructural de GN (Asignando android_sdk_version=26)..."
+echo "INFRA: Sincronizando árbol estructural de GN limpio desde cero..."
 gn gen out/android-arm-tv-server \
-  --args='target_os="android" target_cpu="arm" android_sdk_version=26 android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
+  --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
 
-# Forzado secundario de macros directo sobre los archivos resultantes antes de que compile Ninja
-find out/ -name "*.ninja" -exec sed -i 's|-DCHIP_HAVE_CONFIG_H=1|-DCHIP_HAVE_CONFIG_H=1 -D__ANDROID_API__=26|g' {} +
-
-echo "INFRA: Purgando flags incompatibles de Kotlin (-Xlint) de los artefactos de Ninja..."
+# Purgamos flags de linter de Kotlin post-generación en los artefactos nuevos de Ninja
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation",||g' {} +
-find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation"||g' {} +
 find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} +
 
-echo "INFRA: Ninja iniciará la compilación con mapeo de dependencias de red corregido..."
+echo "INFRA: Lanzando Ninja de forma limpia con el api_level nativo 24 del proyecto..."
 ninja -C out/android-arm-tv-server
+
 
