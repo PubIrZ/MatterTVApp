@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "INFRA DEBUG: La ruta de GITHUB_WORKSPACE detectada en este runner es: $GITHUB_WORKSPACE"
-exit 10
+#echo "INFRA DEBUG: La ruta de GITHUB_WORKSPACE detectada en este runner es: $GITHUB_WORKSPACE"
+#exit 10
 #echo "🚨 MODO RESCATE ACTIVO: Saltando compilación y forzando subida inmediata del out (gh artifact upload)."
 #exit 10
 
