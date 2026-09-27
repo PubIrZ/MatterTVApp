@@ -127,7 +127,24 @@ find out/ -name "*.ninja" -exec sed -i 's|-Xlint:all||g' {} + 2>/dev/null || tru
 find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} + 2>/dev/null || true
 
 # =========================================================================
-# COMPILACIÓN MAESTRA INCREMENTAL CON NINJA
+# COMPILACIÓN MAESTRA INCREMENTAL CON NINJA (MODO DIAGNÓSTICO)
 # =========================================================================
 echo "INFRA: Ejecutando Ninja. El búnker procesará la compilación de forma segura..."
+
+# Habilitamos un atrapador de errores set +e para poder extraer los logs reales de tlv__kotlinc
+set +e
 ninja -C out/android-arm-tv-server
+
+# Si falla, forzamos a Ninja a ejecutar EXCLUSIVAMENTE ese subcomando en modo verbose
+if [ $? -ne 0 ]; then
+    echo "========================================================================="
+    echo "🚨 CAPTURANDO LOG DE DIAGNÓSTICO EN ALTA DEFINICIÓN PARA KOTLINC 🚨"
+    echo "========================================================================="
+    
+    # Forzamos la ejecución individual con -v para desvelar el error oculto en el terminal
+    ninja -C out/android-arm-tv-server -v third_party/connectedhomeip/src/controller/java:tlv__kotlinc
+    
+    exit 1
+fi
+set -e
+
