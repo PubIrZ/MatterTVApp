@@ -1,11 +1,11 @@
 #!/bin/bash
 # =========================================================================
-# PARTE 1: SCRIPT DINÁMICO DE COMPILACIÓN - REQUISITOS SDK 26 / NDK R23C
+# SCRIPT DINÁMICO DE COMPILACIÓN - REQUISITOS SDK 26 / NDK R23C
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
-# Add this ONLY if you want to force Ninja to clean its database layout:
-rm -rf out
+# Forzamos la limpieza del layout de Ninja para evitar conflictos de caché
+rm -rf out/
 
 # =========================================================================
 # ¡EL LIMPIADOR MAESTRO DE SALTOS DE LÍNEA DE WINDOWS (CRLF a LF)!
@@ -89,7 +89,7 @@ export PATH="/usr/local/bin:$PATH"
 echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado!"
 
 # =========================================================================
-# PARTE 2: LIMPIEZA DE CACHÉ, ENRUTAMIENTO NAT_IVO Y COMPILACIÓN LIMPIA
+# PARTE 2: ENRUTAMIENTO NATIVO Y COMPILACIÓN LIMPIA CON PARCHE DE ACCESORS
 # =========================================================================
 
 # Exponemos de forma nativa los binarios del NDK r23c
@@ -114,15 +114,13 @@ find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"||g' {} + 2>/dev/null || true
 
 # Safe quote-bounded truncation pattern (prevents source tree corruption)
-find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
+find .type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*"||g' {} + 2>/dev/null || true
-
 
 # Inhibición de advertencias de Kotlin en el motor de Pigweed
 export KOTLIN_COMPILER_ARGS="-nowarn -warn:0"
 export KOTLINC_ARGS="-nowarn"
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
-
 
 # Locate kotlinc and enforce fallback execution mapping permissions 
 KOTLINC_BIN=$(find .environment/ -name "kotlinc" -type f -print -quit 2>/dev/null)
@@ -138,6 +136,19 @@ gn gen out/android-arm-tv-server \
   --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
   --root=examples/tv-app/android/
 
+# =========================================================================
+# ¡REGENERACIÓN DE ARTEFACTOS GENERADOS POR ZAP!
+# Esto asegura que Accessors.cpp y otros archivos autogenerados existan antes de compilar.
+# =========================================================================
+echo "INFRA: Invocando la pre-generación de plantillas ZAP para TV-App..."
+set +e
+ninja -C out/android-arm-tv-server third_party/connectedhomeip/examples/tv-app/tv-common:tv-common_zapgen_generate
+set -e
+
+if [ -f "scripts/tools/zap/generate.py" ]; then
+    python3 scripts/tools/zap/generate.py examples/tv-app/tv-common/tv-app.zap -o zzz_generated/app-common/app-common/zap-generated/ || true
+fi
+
 # Purgamos flags de linter de Kotlin post-generación en los artefactos nuevos de Ninja
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 find out/ -name "*.json" -exec sed -i 's|"-Xlint:deprecation",||g' {} +
@@ -145,5 +156,6 @@ find out/ -name "*.ninja" -exec sed -i 's|-Xlint:deprecation||g' {} +
 
 echo "INFRA: Lanzando Ninja de forma limpia con el api_level nativo 24 del proyecto..."
 ninja -C out/android-arm-tv-server
+
 
 
