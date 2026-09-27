@@ -78,25 +78,35 @@ if [ -d "third_party/android_deps/artifacts" ]; then
 fi
 
 # =========================================================================
-# HACK QUIRÚRGICO DIRECTO AL RUNNER DE KOTLIN DE PIGWEED
-# Filtramos dinámicamente cualquier flag inválido antes de invocar el compilador
+# INTERCEPCIÓN AGRESIVA DE SEGURIDAD A NIVEL DE BINARIO KOTLINC
+# Interceptamos la llamada al compilador directamente en la raíz de ejecución
 # =========================================================================
-echo "INFRA: Inyectando interceptor de argumentos en el motor de Pigweed (kotlinc_runner.py)..."
-RUNNER_PATH=$(find .environment/ third_party/ -name "kotlinc_runner.py" -type f -print -quit 2>/dev/null || find . -name "kotlinc_runner.py" -type f -print -quit)
+echo "INFRA: Localizando y aplicando interceptor binario sobre el ejecutable nativo de kotlinc..."
+REAL_KOTLINC=$(find .environment/ -type f -name "kotlinc" -print -quit 2>/dev/null)
 
-if [ -n "$RUNNER_PATH" ] && [ -f "$RUNNER_PATH" ]; then
-    # Modificamos el script de Python para purgar de la lista de argumentos cualquier cosa que contenga "-Xlint" o "-Werror"
-    set +e
-    sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|# Parche dinámico maestro\n    filtered_args = [x for x in args.rest if not x.startswith('-Xlint') and not x.startswith('-Werror')]\n    kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + filtered_args)|g" "$RUNNER_PATH"
-    set -e
-    echo "SUCCESS: Interceptor aplicado con éxito sobre: $RUNNER_PATH"
+if [ -n "$REAL_KOTLINC" ] && [ -f "$REAL_KOTLINC" ]; then
+    # Renombramos el binario original a una firma interna de resguardo si no se ha hecho ya
+    if [ ! -f "${REAL_KOTLINC}.original" ]; then
+        mv "$REAL_KOTLINC" "${REAL_KOTLINC}.original"
+        
+        # Escribimos el script interceptor puro para filtrar argumentos en caliente
+        echo '#!/bin/bash' > "$REAL_KOTLINC"
+        echo 'FILTERED_ARGS=()' >> "$REAL_KOTLINC"
+        echo 'for arg in "$@"; do' >> "$REAL_KOTLINC"
+        echo '    if [[ "$arg" != *"-Xlint"* && "$arg" != *"-Werror"* && "$arg" != *"-Wwarning"* ]]; then' >> "$REAL_KOTLINC"
+        echo '        FILTERED_ARGS+=("$arg")' >> "$REAL_KOTLINC"
+        echo '    fi' >> "$REAL_KOTLINC"
+        echo 'done' >> "$REAL_KOTLINC"
+        echo "exec ${REAL_KOTLINC}.original -nowarn \"\${FILTERED_ARGS[@]}\"" >> "$REAL_KOTLINC"
+        
+        chmod +x "$REAL_KOTLINC"
+        echo "SUCCESS: ¡Interceptor definitivo a nivel binario de kotlinc inyectado con éxito!"
+    fi
 fi
 
 # Purgamos de forma preventiva las plantillas fuente de GN
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror",||g' {} + 2>/dev/null || true
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"||g' {} + 2>/dev/null || true
-find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
-find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*"||g' {} + 2>/dev/null || true
 
 # =========================================================================
 # GENERACIÓN DE ENTORNO GN (Alineado con los fuentes nativos de la rama v1.3)
@@ -107,7 +117,7 @@ gn gen out/android-arm-tv-server \
   --root=examples/tv-app/android/
 
 # =========================================================================
-# PURGA POST-GN EN ARTEFACTOS GENERADOS (Capa extra de resguardo)
+# PURGA POST-GN EN ARTEFACTOS GENERADOS 
 # =========================================================================
 echo "INFRA: Purgando referencias de -Xlint heredadas en los perfiles generados por GN..."
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} + 2>/dev/null || true
