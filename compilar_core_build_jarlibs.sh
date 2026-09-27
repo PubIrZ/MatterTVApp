@@ -53,4 +53,4 @@ find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 
 echo "INFRA: Ninja reanudará la compilación de forma incremental..."
 #ninja -C out/android-arm-tv-server
-./scripts/build/build_examples.py --target android-arm-tv-server
+./scripts/build/build_examples.py --target android-arm-tv-server build
