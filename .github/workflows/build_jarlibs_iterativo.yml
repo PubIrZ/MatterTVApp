@@ -51,11 +51,7 @@ jobs:
           
           # Clonamos de forma aislada en la subcarpeta mapeada para proteger tu script compilar_core.sh
           git clone --depth 1 --branch v1.3-branch "${URL_github}" matter-sdk
-
-          # Guardamos la ruta absoluta de la raíz original de nuestro proyecto propio
-          ORIGINAL_WORKSPACE_ROOT=$(pwd)
-          echo "$ORIGINAL_WORKSPACE_ROOT"
-          
+       
           cd matter-sdk
           git submodule update --init --recursive --depth 1
 
@@ -149,8 +145,6 @@ jobs:
           LAST_HASH=$(git rev-parse HEAD)
           echo "INFRA NATIVA: Monitor activo. Commit inicial: $LAST_HASH"
 
-          echo "$ORIGINAL_WORKSPACE_ROOT"
-
           # =========================================================================
           # BUCLE DE CONTROL INFINITO (Mantiene la máquina virtual viva en el host)
           # =========================================================================
@@ -160,7 +154,7 @@ jobs:
             echo "========================================================================="
             
             # Volvemos a la raíz original, aseguramos que el script local modificado se mueva al SDK
-            cd "$ORIGINAL_WORKSPACE_ROOT"
+            cd ${{ github.workspace }}
             cp -f compilar_core_build_jarlib.sh matter-sdk/
             
             # Entramos a la carpeta aislada del SDK de Matter para ejecutar el script nativamente
