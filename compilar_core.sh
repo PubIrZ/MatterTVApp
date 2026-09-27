@@ -85,9 +85,7 @@ export PATH="/usr/local/bin:$PATH"
 echo "SUCCESS: ¡Motor ZAP-CLI inyectado y mapeado!"
 
 # =========================================================================
-# TRUCO MAESTRO 2 BLINDADO: PURE SYMLINK REDIRECTION (SIN COMANDOS CP)
-# Al usar únicamente 'ln -sf' previo borrado 'rm -f', el sistema operativo
-# rompe cualquier bucle viejo. Es imposible que arroje "are the same file".
+# TRUCO MAESTRO 2: TU PARCHE NDK COMPILER LAYOUT MATCHING (LIBC++) BLINDADO
 # =========================================================================
 echo "=== HACKING NDK DIRECTORY TREE FOR LIBC++ ==="
 NDK_PATH="/opt/android/android-ndk-r25c"
@@ -101,33 +99,43 @@ mkdir -p "$TARGET_STL_DIR_32" "$TARGET_STL_DIR_64"
 REAL_SO_32="/opt/android/android-ndk-r25c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
 REAL_SO_64="/opt/android/android-ndk-r25c/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
 
-# Destruimos preventivamente cualquier archivo o enlace viejo en el destino
 rm -f "$TARGET_STL_DIR_32/libc++_shared.so"
 rm -f "$TARGET_STL_DIR_64/libc++_shared.so"
 
-# Creamos el puente simbólico forzado puro sin tocar comandos cp
 ln -sf "$REAL_SO_32" "$TARGET_STL_DIR_32/libc++_shared.so"
 ln -sf "$REAL_SO_64" "$TARGET_STL_DIR_64/libc++_shared.so"
 echo "SUCCESS: Enlaces simbólicos cruzados inyectados mediante punteros puros."
 
 # =========================================================================
-# ¡EL HACK DE COMPATIBILIDAD PARA EL COMPILADOR CLANG (API 24 BYPASS)!
-# Recreamos los ejecutables fantasma vinculándolos al compilador nativo del NDK
+# ¡EL HACK DE COMPATIBILIDAD DINÁMICO PARA EL COMPILADOR CLANG (API 24 BYPASS)!
+# Localizamos de forma automática el directorio físico que aloja los ejecutables
+# de Clang del NDK en el búnker para evitar caídas por variaciones de nombres de rutas.
 # =========================================================================
-echo "INFRA: Parchando enlaces simbólicos de ejecutables Clang en el NDK..."
-BIN_NDK_DIR="/opt/android/android-ndk-r25c/toolchains/llvm/prebuilt/linux-x86_64/bin"
+echo "INFRA: Localizando de forma automática el directorio de binarios de Clang..."
+set +e
+REAL_BIN_DIR=$(find "$NDK_PATH" -name "*clang++*" -type f -print -quit 2>/dev/null)
+set -e
 
-# Creamos puentes forzados para engañar a los scripts de Matter de 32 bits
-ln -sf "$BIN_NDK_DIR/armv7a-linux-androideabi26-clang" "$BIN_NDK_DIR/armv7a-linux-androideabi24-clang"
-ln -sf "$BIN_NDK_DIR/armv7a-linux-androideabi26-clang++" "$BIN_NDK_DIR/armv7a-linux-androideabi24-clang++"
+if [ -n "$REAL_BIN_DIR" ]; then
+    BIN_NDK_DIR=$(dirname "$REAL_BIN_DIR")
+    echo "INFRA: Directorio de compilación cruzada localizado en: $BIN_NDK_DIR"
+    
+    # Buscamos qué ejecutable de Clang de API alta existe para usarlo de base espejo
+    BASE_CLANG_32=$(find "$BIN_NDK_DIR" -name "armv7a-linux-androideabi*-clang" -type f -print -quit | head -n 1)
+    BASE_CLANGXX_32=$(find "$BIN_NDK_DIR" -name "armv7a-linux-androideabi*-clang++" -type f -print -quit | head -n 1)
+    BASE_CLANG_64=$(find "$BIN_NDK_DIR" -name "aarch64-linux-android*-clang" -type f -print -quit | head -n 1)
+    BASE_CLANGXX_64=$(find "$BIN_NDK_DIR" -name "aarch64-linux-android*-clang++" -type f -print -quit | head -n 1)
 
-# Creamos puentes de respaldo preventivos para la variante de 64 bits por si acaso
-ln -sf "$BIN_NDK_DIR/aarch64-linux-android26-clang" "$BIN_NDK_DIR/aarch64-linux-android24-clang"
-ln -sf "$BIN_NDK_DIR/aarch64-linux-android26-clang++" "$BIN_NDK_DIR/aarch64-linux-android24-clang++"
-echo "SUCCESS: ¡Puentes de compatibilidad de ejecutables Clang inyectados!"
-
-
-
+    echo "INFRA: Inyectando enlaces de compatibilidad API 24 basados en objetos reales..."
+    ln -sf "$BASE_CLANG_32" "$BIN_NDK_DIR/armv7a-linux-androideabi24-clang"
+    ln -sf "$BASE_CLANGXX_32" "$BIN_NDK_DIR/armv7a-linux-androideabi24-clang++"
+    ln -sf "$BASE_CLANG_64" "$BIN_NDK_DIR/aarch64-linux-android24-clang"
+    ln -sf "$BASE_CLANGXX_64" "$BIN_NDK_DIR/aarch64-linux-android24-clang++"
+    echo "SUCCESS: ¡Puentes de compatibilidad de ejecutables Clang inyectados!"
+else
+    echo "CRITICAL ERROR: No se pudo localizar la carpeta de ejecutables binarios del NDK."
+    exit 1
+fi
 
 # =========================================================================
 # ¡EL CAMBIO MAESTRO DE RAÍZ! ELIMINAMOS -Werror Y DESACTIVAMOS ALERTAS
