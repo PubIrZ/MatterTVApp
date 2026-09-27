@@ -1,0 +1,216 @@
+name: Build Matter TVApp (only .jar's for .so libs - Iterativo)
+# JDK 11 & NDK 23.2.8568313 (r23c)
+
+on:
+  workflow_dispatch: # Permite iniciar la compilación manualmente con un botón desde la interfaz web
+
+jobs:
+  build-tv-libraries:
+    runs-on: ubuntu-latest
+
+    steps:
+      # =========================================================================
+      # 1. MECANISMO DE CONSERVACIÓN ESTÁNDAR: AMARRADO AL COMMIT EN CURSO
+      # =========================================================================
+      - name: Cache Matter Build Environment and Output Targets
+        uses: actions/cache@v4
+        id: build-cache
+        with:
+          path: |
+            .environment
+            matter-sdk/out
+            matter-sdk/third_party
+            matter-sdk/examples
+          key: ${{ runner.os }}-matter-tvapp-cache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-matter-tvapp-cache-
+
+      # =========================================================================
+      # 2. EVALUACIÓN Y DESCARGA NATIVA DE REPOSITORIO ORIGINAL PROPIO
+      # =========================================================================
+      - name: Checkout Local Repository (PubIrZ/MatterTVApp)
+        uses: actions/checkout@v4 # Trae tu repositorio original que contiene el archivo compilar_core.sh
+
+      - name: Evaluate Disk and Skip Checkout
+        id: eval-disk
+        run: |
+          if [ -d "matter-sdk/src" ] && [ "$(ls -A matter-sdk/src 2>/dev/null)" ]; then
+            echo "SKIP_SETUP=true" >> $GITHUB_ENV
+            echo "INFRA: Estructura de código detectada. Omitiendo clonación destructiva para el Re-run."
+          else
+            echo "SKIP_SETUP=false" >> $GITHUB_ENV
+            echo "INFRA: Disco vacío o incompleto. Activando descarga inicial..."
+          fi
+
+      - name: Emergency Upstream SDK Checkout
+        if: env.SKIP_SETUP == 'false'
+        run: |
+          PATH_project="/project-chip/connectedhomeip.git"
+          URL_github="https://github.com${PATH_project}"
+          echo "INFRA: Descargando de forma inequívoca el SDK desde la ruta: ${URL_github}"
+          
+          # Clonamos de forma aislada en la subcarpeta mapeada para proteger tu script compilar_core.sh
+          git clone --depth 1 --branch v1.3-branch "${URL_github}" matter-sdk
+          cd matter-sdk
+          git submodule update --init --recursive --depth 1
+
+      # =========================================================================
+      # MATRIZ DE CONFIGURACIÓN DE JAVA DUAL: ADAPTADO PARA COMPILACIÓN KOTLIN
+      # =========================================================================
+      - name: Set up Java JDK 11 (Para el compilador interno de Gradle/Kotlin v1.3)
+        if: env.SKIP_SETUP == 'false'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+
+      - name: Set up Java JDK 17 (Fija Java 17 por defecto para el host y sdkmanager)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # =========================================================================
+      # RETROCOMPATIBILIDAD NDK: INYECTAMOS EL SDK r25c ESTABLE DE RESPALDO
+      # =========================================================================
+      - name: Set up Android NDK r25c
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: 'r25c'
+
+      # =========================================================================
+      # ENTORNO SEGURO: PYTHON 3.11 EVITA EL CRASH DE LOS TIPOS DE DATOS (TYPEVAR)
+      # =========================================================================
+      - name: Set up Python 3.11
+        if: env.SKIP_SETUP == 'false'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install System Dependencies
+        if: env.SKIP_SETUP == 'false'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config ninja-build libglib2.0-dev libdbus-1-dev git unzip curl file
+
+      - name: Install Missing Android 26 Platform SDK
+        if: env.SKIP_SETUP == 'false'
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-26"
+
+      - name: Patch NDK r25c Directory Structure for Matter 1.3
+        if: env.SKIP_SETUP == 'false'
+        run: |
+          NDK_PATH="${{ steps.setup-ndk.outputs.ndk-path }}"
+          mkdir -p "$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a"
+          REAL_SO_32="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
+          ln -sf "$REAL_SO_32" "$NDK_PATH/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a/libc++_shared.so"
+
+      - name: Inject Pre-built ZAP and Bypass Interactive Prompts
+        if: env.SKIP_SETUP == 'false'
+        run: |
+          ZAP_ASSET="/project-chip/zap/releases/download/v2024.03.29/zap-linux-x64.zip"
+          curl -L --retry 5 --retry-delay 5 --fail "https://github.com${ZAP_ASSET}" -o zap.zip
+          sudo mkdir -p /usr/local/share/zap
+          sudo unzip -o -q zap.zip -d /usr/local/share/zap
+          if [ -d "/usr/local/share/zap/zap-linux-x64" ]; then
+              sudo cp -r /usr/local/share/zap/zap-linux-x64/* /usr/local/share/zap/
+              sudo rm -rf /usr/local/share/zap/zap-linux-x64
+          fi
+          sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap-cli
+          sudo ln -sf /usr/local/share/zap/zap-cli /usr/local/bin/zap
+          sudo chmod +x /usr/local/bin/zap*
+          if [ -f "matter-sdk/scripts/setup/zap.json" ]; then echo '{"packages": []}' > matter-sdk/scripts/setup/zap.json; fi
+          echo "ZAP_INSTALL_PATH=/usr/local/bin" >> $GITHUB_ENV
+
+
+      # =========================================================================
+      # 3. MOTOR NATIVO DE COMPILACIÓN DINÁMICA CON CAPACIDAD DE ESCUCHA EN VIVO
+      # =========================================================================
+      - name: Run Infinite Loop Compiler with Git Polling (Direct Native Host)
+        shell: bash
+        env:
+          ANDROID_NDK_ROOT: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ZAP_INSTALL_PATH: /usr/local/bin
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Configuramos Git en el host runner para asegurar el control de alertas de red
+          git config --global --add safe.directory ${{ github.workspace }}
+          
+          # Guardamos el Hash del commit actual con el que arrancó el pipeline nativo
+          LAST_HASH=$(git rev-parse HEAD)
+          echo "INFRA NATIVA: Monitor activo. Commit inicial: $LAST_HASH"
+
+          # Guardamos la ruta absoluta de la raíz original de nuestro proyecto propio
+          ORIGINAL_WORKSPACE_ROOT=$(pwd)
+
+          # =========================================================================
+          # BUCLE DE CONTROL INFINITO (Mantiene la máquina virtual viva en el host)
+          # =========================================================================
+          while true; do
+            echo "========================================================================="
+            echo "INFRA NATIVA: Sincronizando script compilar_core_build_jarlib.sh y lanzando compilación..."
+            echo "========================================================================="
+            
+            # Volvemos a la raíz original, aseguramos que el script local modificado se mueva al SDK
+            cd "$ORIGINAL_WORKSPACE_ROOT"
+            cp -f compilar_core_build_jarlib.sh matter-sdk/
+            
+            # Entramos a la carpeta aislada del SDK de Matter para ejecutar el script nativamente
+            cd matter-sdk
+            chmod +x compilar_core_build_jarlib.sh
+
+            # Ejecutamos tu script de compilación nativo directo en el host sin capas intermedias.
+            # Usamos '|| true' para capturar el fallo. Si falla, el script NO colapsa el Job nativo;
+            # entra de inmediato en el modo de espera interactivo por red.
+            if ./compilar_core_build_jarlib.sh; then
+              echo "SUCCESS: ¡Compilación nativa completada con éxito rotundo!"
+              break # Rompe el bucle infinito principal y pasa al paso final de subir los JARs
+            else
+              echo "❌ ERROR: La compilación nativa ha fallado en algún punto del proceso."
+              echo "========================================================================="
+              echo "📡 MODO ESCUCHA NATIVO ACTIVO: Modifica compilar_core_build_jarlib.sh en tu PC y haz git push."
+              echo "La máquina virtual de GitHub se quedará esperando tus cambios en vivo..."
+              echo "========================================================================="
+            fi
+
+            # Volvemos a la raíz del repositorio propio para poder escuchar las actualizaciones de Git
+            cd "$ORIGINAL_WORKSPACE_ROOT"
+
+            # BUCLE SECUNDARIO DE ESCUCHA POR RED (Monitorea cambios en GitHub cada 15 segundos)
+            while true; do
+              sleep 15
+              
+              # Consultamos a la API de GitHub de forma silenciosa para ver si hay un nuevo commit en la rama
+              git fetch --quiet origin
+              NEW_HASH=$(git rev-parse origin/${{ github.ref_name }})
+
+              # Si los Hashes no coinciden, significa que hiciste un 'git push' desde tu computadora
+              if [ "$LAST_HASH" != "$NEW_HASH" ]; then
+                echo "🔔 ¡ALERTA NATIVA! Detectado nuevo cambio en compilar_core_build_jarlib.sh en internet."
+                echo "Descargando parche en caliente... (Commit anterior: $LAST_HASH -> Nuevo: $NEW_HASH)"
+                
+                # Descargamos el nuevo script modificado directo al disco del host runner
+                git pull origin ${{ github.ref_name }} --quiet
+                
+                # Actualizamos nuestro token de control para la siguiente vuelta del bucle
+                LAST_HASH=$NEW_HASH
+                break # Rompe este minibucle de espera y vuelve al inicio del bucle principal a compilar
+              fi
+            done
+          done
+
+      # =========================================================================
+      # EXTRACCIÓN Y SUBIDA AUTOMÁTICA DE LOS ARCHIVOS JAR DE CLASES
+      # =========================================================================
+      - name: Upload Core SDK JAR Artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-core-java-jars
+          path: |
+            matter-sdk/out/android-arm-tv-server/lib/*.jar
+            matter-sdk/out/android-arm-tv-server/gen/third_party/**/*.jar
