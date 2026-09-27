@@ -1,6 +1,6 @@
 #!/bin/bash
 # =========================================================================
-# SCRIPT MAESTRO DE COMPILACIÓN DEFINTIVO - MATTER 1.3
+# SCRIPT MAESTRO DE COMPILACIÓN DEFINITIVO - MATTER 1.3
 # =========================================================================
 set -e # Detiene el script inmediatamente si ocurre un error inesperado
 
@@ -9,11 +9,11 @@ set -e # Detiene el script inmediatamente si ocurre un error inesperado
 # =========================================================================
 echo "INFRA: Rompiendo y purgando cualquier residuo cíclico de compilaciones previas..."
 
-# Forzamos la remoción de enlaces y directorios usando comodines absolutos
+# Rompemos de forma agresiva cualquier bucle de enlaces simbólicos colgados o recursivos
 unlink zzz_generated 2>/dev/null || true
 rm -rf out/ zzz_generated/
 
-# Limpieza quirúrgica de la ruta conflictiva para evitar errores de loops simbólicos
+# Limpieza quirúrgica profunda de la ruta conflictiva para evitar errores de loops simbólicos
 set +e
 find . -name "zzz_generated" -exec rm -rf {} + 2>/dev/null
 set -e
@@ -108,7 +108,7 @@ find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Werror"||g' {} + 2>/dev/null || true
 
 # Corrección definitiva de sed: Patrón limpio acotado por comillas válidas de GN
-find .type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
+find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*",||g' {} + 2>/dev/null || true
 find . -type f \( -name "BUILD.gn" -o -name "*.gni" \) -exec sed -i 's|"-Xlint:[^"]*"||g' {} + 2>/dev/null || true
 
 echo "INFRA: Inyectando inhibidores de error '-nowarn' en el motor de Pigweed (kotlinc)..."
@@ -117,7 +117,7 @@ export KOTLINC_ARGS="-nowarn"
 find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call(kotlin_args + args.rest)|kotlin_args.append('-nowarn')\n    retcode = subprocess.check_call(kotlin_args + args.rest)|g" {} +
 
 # =========================================================================
-# SINCRONIZACIÓN GN NAT_IVA (Crea la estructura out/ de forma limpia primero)
+# SINCRONIZACIÓN GN NATIVA
 # =========================================================================
 echo "INFRA: Sincronizando árbol estructural de GN limpio..."
 gn gen out/android-arm-tv-server \
@@ -125,7 +125,7 @@ gn gen out/android-arm-tv-server \
   --root=examples/tv-app/android/
 
 # =========================================================================
-# GENERACIÓN DE CÓDIGO NATIVA DE ATRIBUTOS (ZAP)
+# GENERACIÓN DE CÓDIGO NATIVA DE ATRIBUTOS (ZAP - CON ENRUTAMIENTO ABSOLUTO)
 # =========================================================================
 echo "INFRA: Invocando la pre-generación física de código ZAP para TV-App..."
 
@@ -133,15 +133,27 @@ echo "INFRA: Invocando la pre-generación física de código ZAP para TV-App..."
 AUTO_GEN_PATH="examples/tv-app/android/third_party/connectedhomeip/zzz_generated/app-common/app-common/zap-generated/attributes"
 mkdir -p "$AUTO_GEN_PATH"
 
+echo "INFRA: Localizando archivos de plantilla absolutos para evitar caídas de packageId..."
+MATTER_TEMPLATES_JSON=$(find "$(pwd)" -name "matter-idl-server.json" -type f -print -quit 2>/dev/null)
+
+if [ -z "$MATTER_TEMPLATES_JSON" ] || [ ! -f "$MATTER_TEMPLATES_JSON" ]; then
+    echo "WARNING: No se encontró matter-idl-server.json automáticamente. Usando fallback..."
+    MATTER_TEMPLATES_JSON="$(pwd)/src/app/zap-templates/matter-idl-server.json"
+fi
+
+echo "INFRA: Plantilla de Matter resuelta en: $MATTER_TEMPLATES_JSON"
+
 set +e
-# Ejecutamos zap-cli apuntando a la plantilla nativa validada por Matter
+# Ejecutamos zap-cli forzando la ruta absoluta del template resuelto
 zap-cli generate examples/tv-app/tv-common/tv-app.zap \
-  -t src/app/zap-templates/matter-idl-server.json \
+  -t "$MATTER_TEMPLATES_JSON" \
   -o "$AUTO_GEN_PATH/../" || true
 
-# Duplicamos la salida a la raíz para resolver accesos globales del core
+# Duplicamos la salida de forma segura a la raíz evitando colisiones de archivos idénticos
 mkdir -p zzz_generated/app-common/app-common/zap-generated/attributes/
-cp -r examples/tv-app/android/third_party/connectedhomeip/zzz_generated/* zzz_generated/ || true
+if [ ! "zzz_generated" -ef "examples/tv-app/android/third_party/connectedhomeip/zzz_generated" ]; then
+    cp -rf examples/tv-app/android/third_party/connectedhomeip/zzz_generated/* zzz_generated/ 2>/dev/null || true
+fi
 set -e
 
 # =========================================================================
