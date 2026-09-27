@@ -220,3 +220,30 @@ jobs:
           include-hidden-files: true # Asegura que se incluyan archivos de configuración ocultos generados por GN/Ninja
           compression-level: 6       # Balance óptimo entre velocidad de empaquetado y tamaño del archivo zip resultante
 
+      # =========================================================================
+      # EXTRACCIÓN DIVIDIDA DE ARTEFACTOS: LIBRERÍAS NATIVAS (.SO)
+      # =========================================================================
+      - name: Upload Only Native Libraries (.so)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-only-native-libs
+          path: |
+            matter-sdk/examples/tv-app/android/App/app/libs/jniLibs/armeabi-v7a/libTvApp*.so
+            matter-sdk/examples/tv-app/android/App/app/libs/jniLibs/armeabi-v7a/libc++_shared*.so
+          compression-level: 5
+
+      # =========================================================================
+      # EXTRACCIÓN DIVIDIDA DE ARTEFACTOS: LOS 4 JAR ESENCIALES
+      # =========================================================================
+      - name: Upload Only Core Java Jars (.jar)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matter-only-java-jars
+          path: |
+            matter-sdk/examples/tv-app/android/App/app/libs/TvApp.jar
+            matter-sdk/examples/tv-app/android/App/app/libs/CHIPAppServer.jar
+            matter-sdk/examples/tv-app/android/App/app/libs/AndroidPlatform.jar
+            matter-sdk/examples/tv-app/android/App/app/libs/OnboardingPayload.jar
+          compression-level: 3
