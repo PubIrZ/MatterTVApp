@@ -30,6 +30,9 @@ find . -name "BUILD.gn" -exec sed -i 's|"-Xlint:all"||g' {} +
 find . -name "*.gni" -exec sed -i 's|"-Xlint:all",||g' {} +
 find . -name "*.gni" -exec sed -i 's|"-Xlint:all"||g' {} +
 
+# 🚀 ¡AÑADE ESTA NUEVA LÍNEA AQUÍ PARA CORREGIR EL ERROR DE JAVA 17!
+find . -name "gradle.properties" -exec sed -i 's|-XX:MaxPermSize=2048m||g' {} +
+
 # =========================================================================
 # ANULACIÓN COMPLETA EN EL MOTOR DE PIGWEED (KOTLINC)
 # Modificamos el script wrapper para inyectar '-nowarn' al final del comando
