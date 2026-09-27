@@ -1,4 +1,4 @@
-#!/bin/bash 
+#!/bin/bash
 # =========================================================================
 # SCRIPT DE COMPILACIÓN NATIVO - ENTORNO CONGELADO MATTER 1.3 (API 24)
 # =========================================================================
@@ -7,9 +7,14 @@ set -e # Detiene el script inmediatamente ante cualquier fallo inesperado
 # Limpiador maestro de saltos de línea de Windows (CRLF a LF) por seguridad
 sed -i 's/\r$//' "$0" || true
 
+echo "=== NEUTRALIZANDO DEPENDENCIAS DE RED DE PIGWEED (ANTI-CIPD) ==="
+# Obligamos a Pigweed a saltarse las descargas de red e interactividad de CIPD
+export PW_CIPD_SKIP_BOOTSTRAP=1
+export PW_NO_CIPD_CACHE=1
+
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed en el búnker..."
-# Activamos el entorno de desarrollo nativo que ya viene preparado en la imagen base
-source scripts/activate.sh
+# Activamos el entorno nativo saltándonos cualquier descarga externa de Fuchsia/ZAP
+source scripts/activate.sh --skip-cipd
 
 echo "=== CONFIGURANDO VARIABLES DE ENTORNO NATIVAS DEL DOCKER ==="
 # En la imagen chip-build-android:126, el SDK y NDK ya están preinstalados en estas rutas
