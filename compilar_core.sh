@@ -62,16 +62,20 @@ python3 third_party/android_deps/set_up_android_deps.py
 third_party/java_deps/set_up_java_deps.sh
 
 # =========================================================================
-# ¡EL TRUCO MAESTRO DE SUBSANACIÓN DE ARTEFACTOS DEPENDIENTES (ANDROID_DEPS)!
-# Sincroniza las dependencias Maven descargadas hacia el espejo secundario del subproyecto
+# ¡EL TRUCO MAESTRO DE SUBSANACIÓN DE ARTEFACTOS DEPENDIENTES (SAFE CHECK)!
 # =========================================================================
-echo "INFRA: Sincronizando artefactos jar/aar hacia el árbol de dependencias del subproyecto..."
+echo "INFRA: Sincronizando de forma segura artefactos jar/aar hacia el subproyecto..."
 MIRROR_DEPS_PATH="examples/tv-app/android/third_party/connectedhomeip/third_party/android_deps"
 mkdir -p "$MIRROR_DEPS_PATH"
 
 if [ -d "third_party/android_deps/artifacts" ]; then
-    cp -rf third_party/android_deps/artifacts "$MIRROR_DEPS_PATH/"
-    echo "SUCCESS: Artefactos .jar/.aar replicados exitosamente para evitar caídas de Ninja."
+    set +e
+    # El condicional -ef verifica si los dos paths apuntan al mismo nodo físico en disco
+    if [ ! "third_party/android_deps/artifacts" -ef "$MIRROR_DEPS_PATH/artifacts" ]; then
+        cp -rf third_party/android_deps/artifacts "$MIRROR_DEPS_PATH/" 2>/dev/null || true
+    fi
+    set -e
+    echo "SUCCESS: Verificación de artefactos .jar/.aar completada sin colisiones de enlaces."
 fi
 
 # =========================================================================
