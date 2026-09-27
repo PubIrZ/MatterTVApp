@@ -1,4 +1,8 @@
 #!/bin/bash
+
+#echo "🚨 MODO RESCATE ACTIVO: Saltando compilación y forzando subida inmediata del out (gh artifact upload)."
+#exit 10
+
 # =========================================================================
 # SCRIPT DINÁMICO DE COMPILACIÓN - BYPASS TOTAL DE WARNINGS DE KOTLIN
 # =========================================================================
