@@ -25,6 +25,10 @@ echo "INFRA: Ajustando entorno a $(java -version 2>&1 | head -n 1)"
 # =========================================================================
 sed -i 's/\r$//' "$0" || true
 
+
+echo "INFRA: Parcheando dependencia crítica libgirepository en caliente..."
+sudo apt-get update && sudo apt-get install -y libgirepository1.0-dev
+
 echo "INFRA: Inicializando el entorno virtual aislado de Pigweed..."
 source scripts/activate.sh
 
