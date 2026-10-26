@@ -102,7 +102,7 @@ ANDROID_PY_FILE="/home/runner/work/MatterTVApp/MatterTVApp/matter-sdk/scripts/bu
 if [ -f "$ANDROID_PY_FILE" ]; then
     echo "INFRA: Aplicando parche de última instancia sobre la línea de ejecución de sdkmanager..."
 
-    sed -i 's/"yes | %s --licenses >\/dev\/null"/"JAVA_HOME="$JAVA_HOME_17_X64" yes | %s --licenses >\/dev\/null"/g' "$ANDROID_PY_FILE"
+    sed -i 's/"yes | %s --licenses >\/dev\/null"/"JAVA_HOME=/opt/hostedtoolcache/Java_Zulu_jdk/17.0.21-9/x64 yes | %s --licenses >\/dev\/null"/g' "$ANDROID_PY_FILE"
     
     echo "  ✅ Parche crítico aplicado sobre los métodos _Execute."
 fi
