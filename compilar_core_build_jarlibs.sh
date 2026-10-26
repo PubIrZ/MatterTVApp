@@ -86,16 +86,17 @@ find . -name "kotlinc_runner.py" -exec sed -i "s|retcode = subprocess.check_call
 find . -name "kotlinc_runner.py" -exec sed -i "s|'-Werror'||g" {} +
 
 echo "INFRA: Sincronizando árbol estructural de GN..."
-# gn gen out/android-arm-tv-server \
-#   --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
-#   --root=examples/tv-app/android/
-gn gen out/virtual-device-app \
-  --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
-  --root=examples/virtual-device-app/android/
+gn gen out/android-arm-tv-server \
+  --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="/usr/local/lib/android/sdk" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
+  --root=examples/tv-app/android/
+# gn gen out/virtual-device-app \
+#   --args='target_os="android" target_cpu="arm" android_ndk_root="'$ANDROID_NDK_ROOT'" android_sdk_root="'$ANDROID_HOME'" chip_config_network_layer_ble=false treat_warnings_as_errors=false' \
+#   --root=examples/virtual-device-app/android/
 
 # Parches secundarios de seguridad de última capa sobre archivos de configuración JSON
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
 
+#Añadido para virtual-device-app
 #ANDROID_PY_FILE="scripts/build/builders/android.py"
 ANDROID_PY_FILE="/home/runner/work/MatterTVApp/MatterTVApp/matter-sdk/scripts/build/builders/android.py"
 
@@ -110,8 +111,8 @@ fi
 
 echo "INFRA: Ninja reanudará la compilación de forma incremental..."
 #ninja -C out/android-arm-tv-server
-#./scripts/build/build_examples.py --target android-arm-tv-server build
-./scripts/build/build_examples.py --target android-arm-virtual-device-app build
+./scripts/build/build_examples.py --target android-arm-tv-server build
+#./scripts/build/build_examples.py --target android-arm-virtual-device-app build
 
 # =========================================================================
 # 🚀 OPTIMIZACIÓN POST-COMPILACIÓN (LLVM-STRIP CON ENTORNO DINÁMICO DE BASH)
