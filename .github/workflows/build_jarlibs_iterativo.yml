@@ -162,7 +162,11 @@ jobs:
               cd matter-sdk
               ls -al *.sh
               chmod +x compilar_core_build_jarlibs.sh
-
+              echo ""
+              echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+              cat compilar_core_build_jarlibs.sh
+              echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+              echo ""
               # Ejecutamos tu script de compilación nativo directo en el host
               if ./compilar_core_build_jarlibs.sh; then
                 echo "SUCCESS: ¡Compilación nativa completada con éxito rotundo!"
