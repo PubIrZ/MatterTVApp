@@ -26,6 +26,25 @@ echo "INFRA: Ajustando entorno a $(java -version 2>&1 | head -n 1)"
 sed -i 's/\r$//' "$0" || true
 
 
+echo "========================================================================="
+echo "🔍 DIAGNÓSTICO AVANZADO DE ENTORNO EN EL RUNNER (HOST VIRTUAL)"
+echo "========================================================================="
+echo "🐙 VARIABLES GLOBALES DE GITHUB:"
+echo "-------------------------------------------------------------------------"
+echo "  ↳ GITHUB_WORKSPACE : ${GITHUB_WORKSPACE:-'❌ NO EXPORTADA / VACÍA'}"
+echo "  ↳ GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-'❌ NO EXPORTADA'}"
+echo "  ↳ GITHUB_REF_NAME  : ${GITHUB_REF_NAME:-'❌ NO EXPORTADA'}"
+echo "  ↳ GITHUB_SHA       : ${GITHUB_SHA:-'❌ NO EXPORTADA'}"
+echo "  ↳ GITHUB_RUN_ID    : ${GITHUB_RUN_ID:-'❌ NO EXPORTADA'}"
+echo ""
+echo "☕ VARIANTES DE ENTORNO JAVA (JDK MAP):"
+echo "-------------------------------------------------------------------------"
+echo "  ↳ CURRENT JAVA_HOME: ${JAVA_HOME:-'❌ NO DETECTADA'}"
+echo "  ↳ JAVA_HOME_11_X64 : ${JAVA_HOME_11_X64:-'❌ NO DETECTADA (¿No instalada?)'}"
+echo "  ↳ JAVA_HOME_17_X64 : ${JAVA_HOME_17_X64:-'❌ NO DETECTADA (¿No instalada?)'}"
+echo ""
+
+
 echo "INFRA: Parcheando dependencia crítica libgirepository en caliente..."
 sudo apt-get update && sudo apt-get install -y libgirepository1.0-dev
 
@@ -76,6 +95,18 @@ gn gen out/virtual-device-app \
 
 # Parches secundarios de seguridad de última capa sobre archivos de configuración JSON
 find out/ -name "*.json" -exec sed -i 's|"-Werror",||g' {} +
+
+#ANDROID_PY_FILE="scripts/build/builders/android.py"
+ANDROID_PY_FILE="/home/runner/work/MatterTVApp/MatterTVApp/matter-sdk/scripts/build/builders/android.py"
+
+if [ -f "$ANDROID_PY_FILE" ]; then
+    echo "INFRA: Aplicando parche de última instancia sobre la línea de ejecución de sdkmanager..."
+
+    sed -i 's/"yes | %s --licenses >\/dev\/null"/"JAVA_HOME="$JAVA_HOME_17_X64" yes | %s --licenses >\/dev\/null"/g' "$ANDROID_PY_FILE"
+    
+    echo "  ✅ Parche crítico aplicado sobre los métodos _Execute."
+fi
+# =========================================================================
 
 echo "INFRA: Ninja reanudará la compilación de forma incremental..."
 #ninja -C out/android-arm-tv-server
